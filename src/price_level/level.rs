@@ -19,11 +19,11 @@ pub struct PriceLevel {
     /// The price of this level
     price: u64,
 
-    /// Total visible quantity at this price level
-    visible_quantity: AtomicU64,
+    /// Total display quantity at this price level
+    display_quantity: AtomicU64,
 
-    /// Total hidden quantity at this price level
-    hidden_quantity: AtomicU64,
+    /// Total reserve quantity at this price level
+    reserve_quantity: AtomicU64,
 
     /// Number of orders at this price level
     order_count: AtomicUsize,
@@ -45,8 +45,8 @@ impl PriceLevel {
 
         Ok(Self {
             price: snapshot.price,
-            visible_quantity: AtomicU64::new(snapshot.visible_quantity),
-            hidden_quantity: AtomicU64::new(snapshot.hidden_quantity),
+            display_quantity: AtomicU64::new(snapshot.display_quantity),
+            reserve_quantity: AtomicU64::new(snapshot.reserve_quantity),
             order_count: AtomicUsize::new(order_count),
             orders: queue,
             stats: Arc::new(PriceLevelStatistics::new()),
@@ -73,8 +73,8 @@ impl PriceLevel {
     pub fn new(price: u64) -> Self {
         Self {
             price,
-            visible_quantity: AtomicU64::new(0),
-            hidden_quantity: AtomicU64::new(0),
+            display_quantity: AtomicU64::new(0),
+            reserve_quantity: AtomicU64::new(0),
             order_count: AtomicUsize::new(0),
             orders: OrderQueue::new(),
             stats: Arc::new(PriceLevelStatistics::new()),
@@ -86,19 +86,19 @@ impl PriceLevel {
         self.price
     }
 
-    /// Get the visible quantity
-    pub fn visible_quantity(&self) -> u64 {
-        self.visible_quantity.load(Ordering::Acquire)
+    /// Get the display quantity
+    pub fn display_quantity(&self) -> u64 {
+        self.display_quantity.load(Ordering::Acquire)
     }
 
-    /// Get the hidden quantity
-    pub fn hidden_quantity(&self) -> u64 {
-        self.hidden_quantity.load(Ordering::Acquire)
+    /// Get the reserve quantity
+    pub fn reserve_quantity(&self) -> u64 {
+        self.reserve_quantity.load(Ordering::Acquire)
     }
 
     /// Get the total quantity (visible + hidden)
     pub fn total_quantity(&self) -> u64 {
-        self.visible_quantity() + self.hidden_quantity()
+        self.display_quantity() + self.reserve_quantity()
     }
 
     /// Get the number of orders
@@ -114,13 +114,14 @@ impl PriceLevel {
     /// Add an order to this price level
     pub fn add_order(&self, order: OrderType<()>) -> Arc<OrderType<()>> {
         // Calculate quantities
-        let visible_qty = order.visible_quantity();
-        let hidden_qty = order.hidden_quantity();
+        let visible_qty = order.display_quantity();
+        let hidden_qty = order.reserve_quantity();
 
         // Update atomic counters
-        self.visible_quantity
+        self.display_quantity
             .fetch_add(visible_qty, Ordering::AcqRel);
-        self.hidden_quantity.fetch_add(hidden_qty, Ordering::AcqRel);
+        self.reserve_quantity
+            .fetch_add(hidden_qty, Ordering::AcqRel);
         self.order_count.fetch_add(1, Ordering::AcqRel);
 
         // Update statistics
@@ -173,8 +174,8 @@ impl PriceLevel {
                     order_arc.match_against(remaining);
 
                 if consumed > 0 {
-                    // Update visible quantity counter
-                    self.visible_quantity.fetch_sub(consumed, Ordering::AcqRel);
+                    // Update display quantity counter
+                    self.display_quantity.fetch_sub(consumed, Ordering::AcqRel);
 
                     // Use UUID generator directly
                     let transaction_id = transaction_id_generator.next();
@@ -204,9 +205,9 @@ impl PriceLevel {
 
                 if let Some(updated) = updated_order {
                     if hidden_reduced > 0 {
-                        self.hidden_quantity
+                        self.reserve_quantity
                             .fetch_sub(hidden_reduced, Ordering::AcqRel);
-                        self.visible_quantity
+                        self.display_quantity
                             .fetch_add(hidden_reduced, Ordering::AcqRel);
                     }
 
@@ -215,19 +216,19 @@ impl PriceLevel {
                     self.order_count.fetch_sub(1, Ordering::AcqRel);
                     match &*order_arc {
                         OrderType::IcebergOrder {
-                            hidden_quantity, ..
+                            reserve_quantity, ..
                         } => {
-                            if *hidden_quantity > 0 && hidden_reduced == 0 {
-                                self.hidden_quantity
-                                    .fetch_sub(*hidden_quantity, Ordering::AcqRel);
+                            if *reserve_quantity > 0 && hidden_reduced == 0 {
+                                self.reserve_quantity
+                                    .fetch_sub(*reserve_quantity, Ordering::AcqRel);
                             }
                         }
                         OrderType::ReserveOrder {
-                            hidden_quantity, ..
+                            reserve_quantity, ..
                         } => {
-                            if *hidden_quantity > 0 && hidden_reduced == 0 {
-                                self.hidden_quantity
-                                    .fetch_sub(*hidden_quantity, Ordering::AcqRel);
+                            if *reserve_quantity > 0 && hidden_reduced == 0 {
+                                self.reserve_quantity
+                                    .fetch_sub(*reserve_quantity, Ordering::AcqRel);
                             }
                         }
                         _ => {}
@@ -252,8 +253,8 @@ impl PriceLevel {
     pub fn snapshot(&self) -> PriceLevelSnapshot {
         PriceLevelSnapshot {
             price: self.price,
-            visible_quantity: self.visible_quantity(),
-            hidden_quantity: self.hidden_quantity(),
+            display_quantity: self.display_quantity(),
+            reserve_quantity: self.reserve_quantity(),
             order_count: self.order_count(),
             orders: self.iter_orders(),
         }
@@ -288,12 +289,13 @@ impl PriceLevel {
 
                     if let Some(ref order_arc) = order {
                         // Update atomic counters
-                        let visible_qty = order_arc.visible_quantity();
-                        let hidden_qty = order_arc.hidden_quantity();
+                        let visible_qty = order_arc.display_quantity();
+                        let hidden_qty = order_arc.reserve_quantity();
 
-                        self.visible_quantity
+                        self.display_quantity
                             .fetch_sub(visible_qty, Ordering::AcqRel);
-                        self.hidden_quantity.fetch_sub(hidden_qty, Ordering::AcqRel);
+                        self.reserve_quantity
+                            .fetch_sub(hidden_qty, Ordering::AcqRel);
                         self.order_count.fetch_sub(1, Ordering::AcqRel);
 
                         // Update statistics
@@ -317,8 +319,8 @@ impl PriceLevel {
                 // Find the order
                 if let Some(order) = self.orders.find(order_id) {
                     // Get current quantities
-                    let old_visible = order.visible_quantity();
-                    let old_hidden = order.hidden_quantity();
+                    let old_visible = order.display_quantity();
+                    let old_hidden = order.reserve_quantity();
 
                     // Remove the old order
                     let old_order = match self.orders.remove(order_id) {
@@ -330,26 +332,26 @@ impl PriceLevel {
                     let new_order = old_order.with_reduced_quantity(new_quantity);
 
                     // Calculate the new quantities
-                    let new_visible = new_order.visible_quantity();
-                    let new_hidden = new_order.hidden_quantity();
+                    let new_visible = new_order.display_quantity();
+                    let new_hidden = new_order.reserve_quantity();
 
                     // Update atomic counters
                     if old_visible != new_visible {
                         if new_visible > old_visible {
-                            self.visible_quantity
+                            self.display_quantity
                                 .fetch_add(new_visible - old_visible, Ordering::AcqRel);
                         } else {
-                            self.visible_quantity
+                            self.display_quantity
                                 .fetch_sub(old_visible - new_visible, Ordering::AcqRel);
                         }
                     }
 
                     if old_hidden != new_hidden {
                         if new_hidden > old_hidden {
-                            self.hidden_quantity
+                            self.reserve_quantity
                                 .fetch_add(new_hidden - old_hidden, Ordering::AcqRel);
                         } else {
-                            self.hidden_quantity
+                            self.reserve_quantity
                                 .fetch_sub(old_hidden - new_hidden, Ordering::AcqRel);
                         }
                     }
@@ -375,12 +377,13 @@ impl PriceLevel {
 
                     if let Some(ref order_arc) = order {
                         // Update atomic counters
-                        let visible_qty = order_arc.visible_quantity();
-                        let hidden_qty = order_arc.hidden_quantity();
+                        let visible_qty = order_arc.display_quantity();
+                        let hidden_qty = order_arc.reserve_quantity();
 
-                        self.visible_quantity
+                        self.display_quantity
                             .fetch_sub(visible_qty, Ordering::AcqRel);
-                        self.hidden_quantity.fetch_sub(hidden_qty, Ordering::AcqRel);
+                        self.reserve_quantity
+                            .fetch_sub(hidden_qty, Ordering::AcqRel);
                         self.order_count.fetch_sub(1, Ordering::AcqRel);
 
                         // Update statistics
@@ -402,12 +405,13 @@ impl PriceLevel {
 
                 if let Some(ref order_arc) = order {
                     // Update atomic counters
-                    let visible_qty = order_arc.visible_quantity();
-                    let hidden_qty = order_arc.hidden_quantity();
+                    let visible_qty = order_arc.display_quantity();
+                    let hidden_qty = order_arc.reserve_quantity();
 
-                    self.visible_quantity
+                    self.display_quantity
                         .fetch_sub(visible_qty, Ordering::AcqRel);
-                    self.hidden_quantity.fetch_sub(hidden_qty, Ordering::AcqRel);
+                    self.reserve_quantity
+                        .fetch_sub(hidden_qty, Ordering::AcqRel);
                     self.order_count.fetch_sub(1, Ordering::AcqRel);
 
                     // Update statistics
@@ -430,12 +434,13 @@ impl PriceLevel {
 
                     if let Some(ref order_arc) = order {
                         // Update atomic counters
-                        let visible_qty = order_arc.visible_quantity();
-                        let hidden_qty = order_arc.hidden_quantity();
+                        let visible_qty = order_arc.display_quantity();
+                        let hidden_qty = order_arc.reserve_quantity();
 
-                        self.visible_quantity
+                        self.display_quantity
                             .fetch_sub(visible_qty, Ordering::AcqRel);
-                        self.hidden_quantity.fetch_sub(hidden_qty, Ordering::AcqRel);
+                        self.reserve_quantity
+                            .fetch_sub(hidden_qty, Ordering::AcqRel);
                         self.order_count.fetch_sub(1, Ordering::AcqRel);
 
                         // Update statistics
@@ -460,10 +465,10 @@ impl PriceLevel {
 pub struct PriceLevelData {
     /// The price of this level
     pub price: u64,
-    /// Total visible quantity at this price level
-    pub visible_quantity: u64,
-    /// Total hidden quantity at this price level
-    pub hidden_quantity: u64,
+    /// Total display quantity at this price level
+    pub display_quantity: u64,
+    /// Total reserve quantity at this price level
+    pub reserve_quantity: u64,
     /// Number of orders at this price level
     pub order_count: usize,
     /// Orders at this price level
@@ -474,8 +479,8 @@ impl From<&PriceLevel> for PriceLevelData {
     fn from(price_level: &PriceLevel) -> Self {
         Self {
             price: price_level.price(),
-            visible_quantity: price_level.visible_quantity(),
-            hidden_quantity: price_level.hidden_quantity(),
+            display_quantity: price_level.display_quantity(),
+            reserve_quantity: price_level.reserve_quantity(),
             order_count: price_level.order_count(),
             orders: price_level
                 .iter_orders()
@@ -496,8 +501,8 @@ impl From<&PriceLevelSnapshot> for PriceLevel {
 
         Self {
             price: snapshot.price,
-            visible_quantity: AtomicU64::new(snapshot.visible_quantity),
-            hidden_quantity: AtomicU64::new(snapshot.hidden_quantity),
+            display_quantity: AtomicU64::new(snapshot.display_quantity),
+            reserve_quantity: AtomicU64::new(snapshot.reserve_quantity),
             order_count: AtomicUsize::new(order_count),
             orders: queue,
             stats: Arc::new(PriceLevelStatistics::new()),
@@ -662,8 +667,8 @@ impl Display for PriceLevel {
             f,
             "PriceLevel:price={};visible_quantity={};hidden_quantity={};order_count={};orders=[{}]",
             self.price(),
-            self.visible_quantity(),
-            self.hidden_quantity(),
+            self.display_quantity(),
+            self.reserve_quantity(),
             self.order_count(),
             orders_str.join(",")
         )

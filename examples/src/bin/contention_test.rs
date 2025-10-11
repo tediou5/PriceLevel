@@ -1,7 +1,8 @@
 // examples/src/bin/contention_test.rs
 
 use pricelevel::{
-    OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator, setup_logger,
+    OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+    setup_logger,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -87,7 +88,7 @@ fn test_read_write_ratio() {
                             }
                             1 => {
                                 // Read visible quantity
-                                let _quantity = thread_price_level.visible_quantity();
+                                let _quantity = thread_price_level.display_quantity();
                             }
                             _ => {
                                 // Read total quantity and order count
@@ -193,16 +194,18 @@ fn setup_orders_for_read_write_test(price_level: &PriceLevel) {
 // Helper function to create a standard order
 fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
     OrderType::Standard {
-        id: OrderId::from_u64(id),
-        price,
-        quantity,
-        side: Side::Buy,
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64,
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: quantity,
+            side: Side::Buy,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
     }
 }
 

@@ -1,5 +1,7 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator};
+use pricelevel::{
+    OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+};
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -86,8 +88,8 @@ fn measure_read_write_contention(
                         let _ = thread_price_level.snapshot();
                     } else {
                         // Query operations (check visible quantity, etc.)
-                        let _ = thread_price_level.visible_quantity();
-                        let _ = thread_price_level.hidden_quantity();
+                        let _ = thread_price_level.display_quantity();
+                        let _ = thread_price_level.reserve_quantity();
                         let _ = thread_price_level.order_count();
                     }
                 } else {
@@ -244,12 +246,14 @@ fn measure_hot_spot_contention(
 #[allow(dead_code)]
 fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
     OrderType::Standard {
-        id: OrderId::from_u64(id),
-        price,
-        quantity,
-        side: Side::Buy,
-        timestamp: 1616823000000,
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: quantity,
+            side: Side::Buy,
+            timestamp: 1616823000000,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
     }
 }

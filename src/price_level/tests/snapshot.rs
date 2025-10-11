@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::errors::PriceLevelError;
-    use crate::orders::{OrderId, OrderType, Side, TimeInForce};
+    use crate::orders::{OrderCommon, OrderId, OrderType, Side, TimeInForce};
     use crate::price_level::snapshot::SNAPSHOT_FORMAT_VERSION;
     use crate::price_level::{PriceLevelSnapshot, PriceLevelSnapshotPackage};
     use serde_json::Value;
@@ -11,23 +11,27 @@ mod tests {
     fn create_sample_orders() -> Vec<Arc<OrderType<()>>> {
         vec![
             Arc::new(OrderType::Standard {
-                id: OrderId::from_u64(1),
-                price: 1000,
-                quantity: 10,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(1),
+                    price: 1000,
+                    display_quantity: 10,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
             }),
             Arc::new(OrderType::IcebergOrder {
-                id: OrderId::from_u64(2),
-                price: 1000,
-                visible_quantity: 5,
-                hidden_quantity: 15,
-                side: Side::Buy,
-                timestamp: 1616823000001,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(2),
+                    price: 1000,
+                    display_quantity: 5,
+                    side: Side::Buy,
+                    timestamp: 1616823000001,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
+                reserve_quantity: 15,
             }),
         ]
     }
@@ -59,10 +63,13 @@ mod tests {
         assert_eq!(restored_snapshot.price, snapshot.price);
         assert_eq!(restored_snapshot.order_count, snapshot.order_count);
         assert_eq!(
-            restored_snapshot.visible_quantity,
-            snapshot.visible_quantity
+            restored_snapshot.display_quantity,
+            snapshot.display_quantity
         );
-        assert_eq!(restored_snapshot.hidden_quantity, snapshot.hidden_quantity);
+        assert_eq!(
+            restored_snapshot.reserve_quantity,
+            snapshot.reserve_quantity
+        );
         assert_eq!(restored_snapshot.orders.len(), snapshot.orders.len());
     }
 
@@ -98,8 +105,8 @@ mod tests {
     fn test_new() {
         let snapshot = PriceLevelSnapshot::new(1000);
         assert_eq!(snapshot.price, 1000);
-        assert_eq!(snapshot.visible_quantity, 0);
-        assert_eq!(snapshot.hidden_quantity, 0);
+        assert_eq!(snapshot.display_quantity, 0);
+        assert_eq!(snapshot.reserve_quantity, 0);
         assert_eq!(snapshot.order_count, 0);
         assert!(snapshot.orders.is_empty());
     }
@@ -108,8 +115,8 @@ mod tests {
     fn test_default() {
         let snapshot = PriceLevelSnapshot::default();
         assert_eq!(snapshot.price, 0);
-        assert_eq!(snapshot.visible_quantity, 0);
-        assert_eq!(snapshot.hidden_quantity, 0);
+        assert_eq!(snapshot.display_quantity, 0);
+        assert_eq!(snapshot.reserve_quantity, 0);
         assert_eq!(snapshot.order_count, 0);
         assert!(snapshot.orders.is_empty());
     }
@@ -117,8 +124,8 @@ mod tests {
     #[test]
     fn test_total_quantity() {
         let mut snapshot = PriceLevelSnapshot::new(1000);
-        snapshot.visible_quantity = 50;
-        snapshot.hidden_quantity = 150;
+        snapshot.display_quantity = 50;
+        snapshot.reserve_quantity = 150;
         assert_eq!(snapshot.total_quantity(), 200);
     }
 
@@ -133,14 +140,21 @@ mod tests {
         assert_eq!(collected.len(), 2);
 
         // Verify first order
-        if let OrderType::Standard { id, .. } = **collected[0] {
+        if let OrderType::Standard {
+            common: OrderCommon { id, .. },
+        } = **collected[0]
+        {
             assert_eq!(id, OrderId::from_u64(1));
         } else {
             panic!("Expected StandardOrder");
         }
 
         // Verify second order
-        if let OrderType::IcebergOrder { id, .. } = **collected[1] {
+        if let OrderType::IcebergOrder {
+            common: OrderCommon { id, .. },
+            ..
+        } = **collected[1]
+        {
             assert_eq!(id, OrderId::from_u64(2));
         } else {
             panic!("Expected IcebergOrder");
@@ -150,15 +164,15 @@ mod tests {
     #[test]
     fn test_clone() {
         let mut original = PriceLevelSnapshot::new(1000);
-        original.visible_quantity = 50;
-        original.hidden_quantity = 150;
+        original.display_quantity = 50;
+        original.reserve_quantity = 150;
         original.order_count = 2;
         original.orders = create_sample_orders();
 
         let cloned = original.clone();
         assert_eq!(cloned.price, 1000);
-        assert_eq!(cloned.visible_quantity, 50);
-        assert_eq!(cloned.hidden_quantity, 150);
+        assert_eq!(cloned.display_quantity, 50);
+        assert_eq!(cloned.reserve_quantity, 150);
         assert_eq!(cloned.order_count, 2);
         assert_eq!(cloned.orders.len(), 2);
     }
@@ -166,26 +180,26 @@ mod tests {
     #[test]
     fn test_display() {
         let mut snapshot = PriceLevelSnapshot::new(1000);
-        snapshot.visible_quantity = 50;
-        snapshot.hidden_quantity = 150;
+        snapshot.display_quantity = 50;
+        snapshot.reserve_quantity = 150;
         snapshot.order_count = 2;
 
         let display_str = snapshot.to_string();
         assert!(display_str.contains("price=1000"));
-        assert!(display_str.contains("visible_quantity=50"));
-        assert!(display_str.contains("hidden_quantity=150"));
+        assert!(display_str.contains("display_quantity=50"));
+        assert!(display_str.contains("reserve_quantity=150"));
         assert!(display_str.contains("order_count=2"));
     }
 
     #[test]
     fn test_from_str() {
         let input =
-            "PriceLevelSnapshot:price=1000;visible_quantity=50;hidden_quantity=150;order_count=2";
+            "PriceLevelSnapshot:price=1000;display_quantity=50;reserve_quantity=150;order_count=2";
         let snapshot = PriceLevelSnapshot::from_str(input).unwrap();
 
         assert_eq!(snapshot.price, 1000);
-        assert_eq!(snapshot.visible_quantity, 50);
-        assert_eq!(snapshot.hidden_quantity, 150);
+        assert_eq!(snapshot.display_quantity, 50);
+        assert_eq!(snapshot.reserve_quantity, 150);
         assert_eq!(snapshot.order_count, 2);
         assert!(snapshot.orders.is_empty()); // Orders can't be parsed from string representation
     }
@@ -199,14 +213,14 @@ mod tests {
 
     #[test]
     fn test_from_str_missing_field() {
-        let input = "PriceLevelSnapshot:price=1000;visible_quantity=50;hidden_quantity=150";
+        let input = "PriceLevelSnapshot:price=1000;display_quantity=50;reserve_quantity=150";
         let result = PriceLevelSnapshot::from_str(input);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_from_str_invalid_field_value() {
-        let input = "PriceLevelSnapshot:price=invalid;visible_quantity=50;hidden_quantity=150;order_count=2";
+        let input = "PriceLevelSnapshot:price=invalid;display_quantity=50;reserve_quantity=150;order_count=2";
         let result = PriceLevelSnapshot::from_str(input);
         assert!(result.is_err());
     }
@@ -214,16 +228,16 @@ mod tests {
     #[test]
     fn test_roundtrip_display_fromstr() {
         let mut original = PriceLevelSnapshot::new(1000);
-        original.visible_quantity = 50;
-        original.hidden_quantity = 150;
+        original.display_quantity = 50;
+        original.reserve_quantity = 150;
         original.order_count = 2;
 
         let string_representation = original.to_string();
         let parsed = PriceLevelSnapshot::from_str(&string_representation).unwrap();
 
         assert_eq!(parsed.price, original.price);
-        assert_eq!(parsed.visible_quantity, original.visible_quantity);
-        assert_eq!(parsed.hidden_quantity, original.hidden_quantity);
+        assert_eq!(parsed.display_quantity, original.display_quantity);
+        assert_eq!(parsed.reserve_quantity, original.reserve_quantity);
         assert_eq!(parsed.order_count, original.order_count);
     }
 
@@ -233,8 +247,8 @@ mod tests {
     fn test_snapshot_serialization_fields() {
         // Create a snapshot with specific field values
         let mut snapshot = PriceLevelSnapshot::new(10000);
-        snapshot.visible_quantity = 200;
-        snapshot.hidden_quantity = 300;
+        snapshot.display_quantity = 200;
+        snapshot.reserve_quantity = 300;
         snapshot.order_count = 5;
 
         // Add some orders (empty for now, we'll test orders separately)
@@ -244,8 +258,8 @@ mod tests {
 
         // Check the serialized fields
         assert!(serialized.contains("\"price\":10000"));
-        assert!(serialized.contains("\"visible_quantity\":200"));
-        assert!(serialized.contains("\"hidden_quantity\":300"));
+        assert!(serialized.contains("\"display_quantity\":200"));
+        assert!(serialized.contains("\"reserve_quantity\":300"));
         assert!(serialized.contains("\"order_count\":5"));
         assert!(serialized.contains("\"orders\":[]"));
     }
@@ -255,8 +269,8 @@ mod tests {
         // Test with duplicate field
         let json = r#"{
         "price": 10000,
-        "visible_quantity": 200,
-        "hidden_quantity": 300,
+        "display_quantity": 200,
+        "reserve_quantity": 300,
         "order_count": 5,
         "price": 20000,
         "orders": []
@@ -276,8 +290,8 @@ mod tests {
         // Testing the visitor by providing various field values
         let json = r#"{
         "price": 10000,
-        "visible_quantity": 200,
-        "hidden_quantity": 300,
+        "display_quantity": 200,
+        "reserve_quantity": 300,
         "order_count": 5,
         "orders": []
     }"#;
@@ -285,8 +299,8 @@ mod tests {
         let snapshot: PriceLevelSnapshot = serde_json::from_str(json).unwrap();
 
         assert_eq!(snapshot.price, 10000);
-        assert_eq!(snapshot.visible_quantity, 200);
-        assert_eq!(snapshot.hidden_quantity, 300);
+        assert_eq!(snapshot.display_quantity, 200);
+        assert_eq!(snapshot.reserve_quantity, 300);
         assert_eq!(snapshot.order_count, 5);
         assert!(snapshot.orders.is_empty());
     }
@@ -295,13 +309,15 @@ mod tests {
     fn test_snapshot_with_actual_orders() {
         fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
             OrderType::<()>::Standard {
-                id: OrderId::from_u64(id),
-                price,
-                quantity,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(id),
+                    price,
+                    display_quantity: quantity,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
             }
         }
 
@@ -312,20 +328,22 @@ mod tests {
             hidden_quantity: u64,
         ) -> OrderType<()> {
             OrderType::<()>::IcebergOrder {
-                id: OrderId::from_u64(id),
-                price,
-                visible_quantity,
-                hidden_quantity,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(id),
+                    price,
+                    display_quantity: visible_quantity,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
+                reserve_quantity: hidden_quantity,
             }
         }
         // Create a snapshot with orders
         let mut snapshot = PriceLevelSnapshot::new(10000);
-        snapshot.visible_quantity = 150;
-        snapshot.hidden_quantity = 250;
+        snapshot.display_quantity = 150;
+        snapshot.reserve_quantity = 250;
         snapshot.order_count = 2;
 
         let orders = vec![
@@ -351,13 +369,21 @@ mod tests {
         let deserialized: PriceLevelSnapshot = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(deserialized.price, 10000);
-        assert_eq!(deserialized.visible_quantity, 150);
-        assert_eq!(deserialized.hidden_quantity, 250);
+        assert_eq!(deserialized.display_quantity, 150);
+        assert_eq!(deserialized.reserve_quantity, 250);
         assert_eq!(deserialized.order_count, 2);
         assert_eq!(deserialized.orders.len(), 2);
 
         // Verify order types
-        if let OrderType::Standard { id, quantity, .. } = &*deserialized.orders[0] {
+        if let OrderType::Standard {
+            common:
+                OrderCommon {
+                    id,
+                    display_quantity: quantity,
+                    ..
+                },
+        } = &*deserialized.orders[0]
+        {
             assert_eq!(*id, OrderId::from_u64(1));
             assert_eq!(*quantity, 100);
         } else {
@@ -365,9 +391,13 @@ mod tests {
         }
 
         if let OrderType::IcebergOrder {
-            id,
-            visible_quantity,
-            hidden_quantity,
+            common:
+                OrderCommon {
+                    id,
+                    display_quantity: visible_quantity,
+                    ..
+                },
+            reserve_quantity: hidden_quantity,
             ..
         } = &*deserialized.orders[1]
         {
@@ -382,7 +412,7 @@ mod tests {
 
 #[cfg(test)]
 mod pricelevel_snapshot_serialization_tests {
-    use crate::orders::{OrderId, OrderType, Side, TimeInForce};
+    use crate::orders::{OrderCommon, OrderId, OrderType, Side, TimeInForce};
     use crate::price_level::PriceLevelSnapshot;
 
     use std::str::FromStr;
@@ -392,32 +422,38 @@ mod pricelevel_snapshot_serialization_tests {
     fn create_sample_orders() -> Vec<Arc<OrderType<()>>> {
         vec![
             Arc::new(OrderType::Standard {
-                id: OrderId::from_u64(1),
-                price: 1000,
-                quantity: 10,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(1),
+                    price: 1000,
+                    display_quantity: 10,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
             }),
             Arc::new(OrderType::IcebergOrder {
-                id: OrderId::from_u64(2),
-                price: 1000,
-                visible_quantity: 5,
-                hidden_quantity: 15,
-                side: Side::Sell,
-                timestamp: 1616823000001,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(2),
+                    price: 1000,
+                    display_quantity: 5,
+                    side: Side::Sell,
+                    timestamp: 1616823000001,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
+                reserve_quantity: 15,
             }),
             Arc::new(OrderType::PostOnly {
-                id: OrderId::from_u64(3),
-                price: 1000,
-                quantity: 8,
-                side: Side::Buy,
-                timestamp: 1616823000002,
-                time_in_force: TimeInForce::Ioc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(3),
+                    price: 1000,
+                    display_quantity: 8,
+                    side: Side::Buy,
+                    timestamp: 1616823000002,
+                    time_in_force: TimeInForce::Ioc,
+                    extra_fields: (),
+                },
             }),
         ]
     }
@@ -425,8 +461,8 @@ mod pricelevel_snapshot_serialization_tests {
     // Helper function to create a sample snapshot for testing
     fn create_sample_snapshot() -> PriceLevelSnapshot {
         let mut snapshot = PriceLevelSnapshot::new(1000);
-        snapshot.visible_quantity = 15; // 10 + 5 (first two orders)
-        snapshot.hidden_quantity = 15; // hidden quantity from iceberg order
+        snapshot.display_quantity = 15; // 10 + 5 (first two orders)
+        snapshot.reserve_quantity = 15; // hidden quantity from iceberg order
         snapshot.order_count = 3;
         snapshot.orders = create_sample_orders();
         snapshot
@@ -453,8 +489,8 @@ mod pricelevel_snapshot_serialization_tests {
         assert!(json.contains("\"Standard\":{"));
         assert!(json.contains("\"id\":\"00000000-0000-0001-0000-000000000000\""));
         assert!(json.contains("\"IcebergOrder\":{"));
-        assert!(json.contains("\"visible_quantity\":5"));
-        assert!(json.contains("\"hidden_quantity\":15"));
+        assert!(json.contains("\"display_quantity\":5"));
+        assert!(json.contains("\"reserve_quantity\":15"));
         assert!(json.contains("\"PostOnly\":{"));
     }
 
@@ -472,8 +508,8 @@ mod pricelevel_snapshot_serialization_tests {
 
         // Verify basic fields
         assert_eq!(deserialized.price, 1000);
-        assert_eq!(deserialized.visible_quantity, 15);
-        assert_eq!(deserialized.hidden_quantity, 15);
+        assert_eq!(deserialized.display_quantity, 15);
+        assert_eq!(deserialized.reserve_quantity, 15);
         assert_eq!(deserialized.order_count, 3);
 
         // Verify orders array length
@@ -483,11 +519,14 @@ mod pricelevel_snapshot_serialization_tests {
         let standard_order = &deserialized.orders[0];
         match **standard_order {
             OrderType::Standard {
-                id,
-                price,
-                quantity,
-                side,
-                ..
+                common:
+                    OrderCommon {
+                        id,
+                        price,
+                        display_quantity: quantity,
+                        side,
+                        ..
+                    },
             } => {
                 assert_eq!(id, OrderId::from_u64(1));
                 assert_eq!(price, 1000);
@@ -500,15 +539,19 @@ mod pricelevel_snapshot_serialization_tests {
         let iceberg_order = &deserialized.orders[1];
         match **iceberg_order {
             OrderType::IcebergOrder {
-                id,
-                visible_quantity,
-                hidden_quantity,
-                side,
+                common:
+                    OrderCommon {
+                        id,
+                        display_quantity,
+                        side,
+                        ..
+                    },
+                reserve_quantity,
                 ..
             } => {
                 assert_eq!(id, OrderId::from_u64(2));
-                assert_eq!(visible_quantity, 5);
-                assert_eq!(hidden_quantity, 15);
+                assert_eq!(display_quantity, 5);
+                assert_eq!(reserve_quantity, 15);
                 assert_eq!(side, Side::Sell);
             }
             _ => panic!("Expected IcebergOrder"),
@@ -517,7 +560,13 @@ mod pricelevel_snapshot_serialization_tests {
         let post_only_order = &deserialized.orders[2];
         match **post_only_order {
             OrderType::<()>::PostOnly {
-                id, quantity, side, ..
+                common:
+                    OrderCommon {
+                        id,
+                        display_quantity: quantity,
+                        side,
+                        ..
+                    },
             } => {
                 assert_eq!(id, OrderId::from_u64(3));
                 assert_eq!(quantity, 8);
@@ -537,8 +586,8 @@ mod pricelevel_snapshot_serialization_tests {
         // Verify string format
         assert!(display_str.starts_with("PriceLevelSnapshot:"));
         assert!(display_str.contains("price=1000"));
-        assert!(display_str.contains("visible_quantity=15"));
-        assert!(display_str.contains("hidden_quantity=15"));
+        assert!(display_str.contains("display_quantity=15"));
+        assert!(display_str.contains("reserve_quantity=15"));
         assert!(display_str.contains("order_count=3"));
 
         // Note: The string format doesn't include orders as shown in the FromStr implementation
@@ -548,7 +597,7 @@ mod pricelevel_snapshot_serialization_tests {
     fn test_snapshot_string_format_deserialization() {
         // Create string representation
         let input =
-            "PriceLevelSnapshot:price=1000;visible_quantity=15;hidden_quantity=15;order_count=3";
+            "PriceLevelSnapshot:price=1000;display_quantity=15;reserve_quantity=15;order_count=3";
 
         // Parse from string
         let snapshot =
@@ -556,8 +605,8 @@ mod pricelevel_snapshot_serialization_tests {
 
         // Verify basic fields
         assert_eq!(snapshot.price, 1000);
-        assert_eq!(snapshot.visible_quantity, 15);
-        assert_eq!(snapshot.hidden_quantity, 15);
+        assert_eq!(snapshot.display_quantity, 15);
+        assert_eq!(snapshot.reserve_quantity, 15);
         assert_eq!(snapshot.order_count, 3);
 
         // Orders array should be empty when deserialized from string format (per FromStr implementation)
@@ -567,29 +616,29 @@ mod pricelevel_snapshot_serialization_tests {
     #[test]
     fn test_snapshot_string_format_invalid_inputs() {
         // Test missing price field
-        let input = "PriceLevelSnapshot:visible_quantity=15;hidden_quantity=15;order_count=3";
+        let input = "PriceLevelSnapshot:display_quantity=15;reserve_quantity=15;order_count=3";
         let result = PriceLevelSnapshot::from_str(input);
         assert!(result.is_err());
 
         // Test invalid prefix
-        let input = "InvalidPrefix:price=1000;visible_quantity=15;hidden_quantity=15;order_count=3";
+        let input =
+            "InvalidPrefix:price=1000;display_quantity=15;reserve_quantity=15;order_count=3";
         let result = PriceLevelSnapshot::from_str(input);
         assert!(result.is_err());
 
         // Test invalid field value
-        let input =
-            "PriceLevelSnapshot:price=invalid;visible_quantity=15;hidden_quantity=15;order_count=3";
+        let input = "PriceLevelSnapshot:price=invalid;display_quantity=15;reserve_quantity=15;order_count=3";
         let result = PriceLevelSnapshot::from_str(input);
         assert!(result.is_err());
 
         // Test missing field separator
         let input =
-            "PriceLevelSnapshot:price=1000visible_quantity=15;hidden_quantity=15;order_count=3";
+            "PriceLevelSnapshot:price=1000display_quantity=15;reserve_quantity=15;order_count=3";
         let result = PriceLevelSnapshot::from_str(input);
         assert!(result.is_err());
 
         // Test with unknown field
-        let input = "PriceLevelSnapshot:price=1000;visible_quantity=15;hidden_quantity=15;order_count=3;unknown_field=value";
+        let input = "PriceLevelSnapshot:price=1000;display_quantity=15;reserve_quantity=15;order_count=3;unknown_field=value";
         let result = PriceLevelSnapshot::from_str(input);
         // This should still succeed as FromStr implementation doesn't validate for unknown fields
         assert!(result.is_ok());
@@ -599,8 +648,8 @@ mod pricelevel_snapshot_serialization_tests {
     fn test_snapshot_string_format_roundtrip() {
         // Create a snapshot with only basic fields (no orders)
         let mut original = PriceLevelSnapshot::new(1000);
-        original.visible_quantity = 15;
-        original.hidden_quantity = 15;
+        original.display_quantity = 15;
+        original.reserve_quantity = 15;
         original.order_count = 3;
 
         // Convert to string
@@ -612,8 +661,8 @@ mod pricelevel_snapshot_serialization_tests {
 
         // Verify all fields match
         assert_eq!(parsed.price, original.price);
-        assert_eq!(parsed.visible_quantity, original.visible_quantity);
-        assert_eq!(parsed.hidden_quantity, original.hidden_quantity);
+        assert_eq!(parsed.display_quantity, original.display_quantity);
+        assert_eq!(parsed.reserve_quantity, original.reserve_quantity);
         assert_eq!(parsed.order_count, original.order_count);
     }
 
@@ -621,8 +670,8 @@ mod pricelevel_snapshot_serialization_tests {
     fn test_snapshot_edge_cases() {
         // Test with zero values
         let mut snapshot = PriceLevelSnapshot::new(0);
-        snapshot.visible_quantity = 0;
-        snapshot.hidden_quantity = 0;
+        snapshot.display_quantity = 0;
+        snapshot.reserve_quantity = 0;
         snapshot.order_count = 0;
 
         let json = serde_json::to_string(&snapshot).expect("Failed to serialize");
@@ -630,14 +679,14 @@ mod pricelevel_snapshot_serialization_tests {
             serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(deserialized.price, 0);
-        assert_eq!(deserialized.visible_quantity, 0);
-        assert_eq!(deserialized.hidden_quantity, 0);
+        assert_eq!(deserialized.display_quantity, 0);
+        assert_eq!(deserialized.reserve_quantity, 0);
         assert_eq!(deserialized.order_count, 0);
 
         // Test with maximum values
         let mut snapshot = PriceLevelSnapshot::new(u64::MAX);
-        snapshot.visible_quantity = u64::MAX;
-        snapshot.hidden_quantity = u64::MAX;
+        snapshot.display_quantity = u64::MAX;
+        snapshot.reserve_quantity = u64::MAX;
         snapshot.order_count = usize::MAX;
 
         let json = serde_json::to_string(&snapshot).expect("Failed to serialize max values");
@@ -645,8 +694,8 @@ mod pricelevel_snapshot_serialization_tests {
             serde_json::from_str(&json).expect("Failed to deserialize max values");
 
         assert_eq!(deserialized.price, u64::MAX);
-        assert_eq!(deserialized.visible_quantity, u64::MAX);
-        assert_eq!(deserialized.hidden_quantity, u64::MAX);
+        assert_eq!(deserialized.display_quantity, u64::MAX);
+        assert_eq!(deserialized.reserve_quantity, u64::MAX);
         assert_eq!(deserialized.order_count, usize::MAX);
     }
 
@@ -655,8 +704,8 @@ mod pricelevel_snapshot_serialization_tests {
         // Create JSON with an unknown field "unknown_field"
         let json = r#"{
             "price": 1000,
-            "visible_quantity": 15,
-            "hidden_quantity": 15,
+            "display_quantity": 15,
+            "reserve_quantity": 15,
             "order_count": 3,
             "orders": [],
             "unknown_field": "some value"
@@ -676,8 +725,8 @@ mod pricelevel_snapshot_serialization_tests {
 
         // Verify the error message mentions the expected fields
         assert!(err_string.contains("price"));
-        assert!(err_string.contains("visible_quantity"));
-        assert!(err_string.contains("hidden_quantity"));
+        assert!(err_string.contains("display_quantity"));
+        assert!(err_string.contains("reserve_quantity"));
         assert!(err_string.contains("order_count"));
         assert!(err_string.contains("orders"));
     }
@@ -686,8 +735,8 @@ mod pricelevel_snapshot_serialization_tests {
     fn test_snapshot_empty_orders() {
         // Test with an empty orders array
         let mut snapshot = PriceLevelSnapshot::new(1000);
-        snapshot.visible_quantity = 15;
-        snapshot.hidden_quantity = 15;
+        snapshot.display_quantity = 15;
+        snapshot.reserve_quantity = 15;
         snapshot.order_count = 0;
         snapshot.orders = Vec::new();
 
@@ -708,74 +757,86 @@ mod pricelevel_snapshot_serialization_tests {
         snapshot.orders = vec![
             // Standard order
             Arc::new(OrderType::Standard {
-                id: OrderId::from_u64(1),
-                price: 1000,
-                quantity: 10,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(1),
+                    price: 1000,
+                    display_quantity: 10,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
             }),
             // Iceberg order
             Arc::new(OrderType::IcebergOrder {
-                id: OrderId::from_u64(2),
-                price: 1000,
-                visible_quantity: 5,
-                hidden_quantity: 15,
-                side: Side::Sell,
-                timestamp: 1616823000001,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(2),
+                    price: 1000,
+                    display_quantity: 5,
+                    side: Side::Sell,
+                    timestamp: 1616823000001,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
+                reserve_quantity: 15,
             }),
             // Post-only order
             Arc::new(OrderType::PostOnly {
-                id: OrderId::from_u64(3),
-                price: 1000,
-                quantity: 8,
-                side: Side::Buy,
-                timestamp: 1616823000002,
-                time_in_force: TimeInForce::Ioc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(3),
+                    price: 1000,
+                    display_quantity: 8,
+                    side: Side::Buy,
+                    timestamp: 1616823000002,
+                    time_in_force: TimeInForce::Ioc,
+                    extra_fields: (),
+                },
             }),
             // Fill-or-kill order (as Standard with FOK time-in-force)
             Arc::new(OrderType::Standard {
-                id: OrderId::from_u64(4),
-                price: 1000,
-                quantity: 12,
-                side: Side::Buy,
-                timestamp: 1616823000003,
-                time_in_force: TimeInForce::Fok,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(4),
+                    price: 1000,
+                    display_quantity: 12,
+                    side: Side::Buy,
+                    timestamp: 1616823000003,
+                    time_in_force: TimeInForce::Fok,
+                    extra_fields: (),
+                },
             }),
             // Good-till-date order (as Standard with GTD time-in-force)
             Arc::new(OrderType::Standard {
-                id: OrderId::from_u64(5),
-                price: 1000,
-                quantity: 7,
-                side: Side::Sell,
-                timestamp: 1616823000004,
-                time_in_force: TimeInForce::Gtd(1617000000000),
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(5),
+                    price: 1000,
+                    display_quantity: 7,
+                    side: Side::Sell,
+                    timestamp: 1616823000004,
+                    time_in_force: TimeInForce::Gtd(1617000000000),
+                    extra_fields: (),
+                },
             }),
             // Reserve order
             Arc::new(OrderType::ReserveOrder {
-                id: OrderId::from_u64(6),
-                price: 1000,
-                visible_quantity: 3,
-                hidden_quantity: 12,
-                side: Side::Buy,
-                timestamp: 1616823000005,
-                time_in_force: TimeInForce::Gtc,
+                common: OrderCommon {
+                    id: OrderId::from_u64(6),
+                    price: 1000,
+                    display_quantity: 3,
+                    side: Side::Buy,
+                    timestamp: 1616823000005,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
+                reserve_quantity: 12,
                 replenish_threshold: 1,
-                replenish_amount: Some(2),
+                replenish_amount: None,
                 auto_replenish: true,
-                extra_fields: (),
             }),
         ];
 
         snapshot.order_count = snapshot.orders.len();
-        snapshot.visible_quantity = 45; // Sum of all visible quantities
-        snapshot.hidden_quantity = 27; // Sum of all hidden quantities
+        snapshot.display_quantity = 45; // Sum of all display quantities
+        snapshot.reserve_quantity = 27; // Sum of all reserve quantities
 
         // Serialize to JSON
         let json = serde_json::to_string(&snapshot).expect("Failed to serialize complex snapshot");
@@ -786,8 +847,8 @@ mod pricelevel_snapshot_serialization_tests {
 
         // Verify basic fields
         assert_eq!(deserialized.price, 1000);
-        assert_eq!(deserialized.visible_quantity, 45);
-        assert_eq!(deserialized.hidden_quantity, 27);
+        assert_eq!(deserialized.display_quantity, 45);
+        assert_eq!(deserialized.reserve_quantity, 27);
         assert_eq!(deserialized.order_count, 6);
         assert_eq!(deserialized.orders.len(), 6);
 
@@ -840,16 +901,21 @@ mod pricelevel_snapshot_serialization_tests {
                 matches!(
                     ***order,
                     OrderType::Standard {
-                        time_in_force: TimeInForce::Gtd(_),
-                        ..
+                        common: OrderCommon {
+                            time_in_force: TimeInForce::Gtd(_),
+                            ..
+                        },
                     }
                 )
             })
             .expect("GTD order not found");
 
         if let OrderType::Standard {
-            time_in_force: TimeInForce::Gtd(expiry),
-            ..
+            common:
+                OrderCommon {
+                    time_in_force: TimeInForce::Gtd(expiry),
+                    ..
+                },
         } = **gtd_order
         {
             assert_eq!(expiry, 1617000000000);

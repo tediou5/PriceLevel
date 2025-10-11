@@ -1,5 +1,7 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{OrderId, OrderType, PriceLevel, Side, TimeInForce};
+use pricelevel::{
+    OrderCommon, OrderId, OrderType, PegReferenceType, PriceLevel, Side, TimeInForce,
+};
 use std::hint::black_box;
 
 /// Register all benchmarks for adding orders to a price level
@@ -81,40 +83,46 @@ pub fn register_benchmarks(c: &mut Criterion) {
 /// Create a standard limit order for testing
 fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
     OrderType::Standard {
-        id: OrderId::from_u64(id),
-        price,
-        quantity,
-        side: Side::Buy,
-        timestamp: 1616823000000,
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: quantity,
+            side: Side::Buy,
+            timestamp: 1616823000000,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
     }
 }
 
 /// Create an iceberg order for testing
 fn create_iceberg_order(id: u64, price: u64, visible: u64, hidden: u64) -> OrderType<()> {
     OrderType::IcebergOrder {
-        id: OrderId::from_u64(id),
-        price,
-        visible_quantity: visible,
-        hidden_quantity: hidden,
-        side: Side::Buy,
-        timestamp: 1616823000000,
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: visible,
+            side: Side::Buy,
+            timestamp: 1616823000000,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
+        reserve_quantity: hidden,
     }
 }
 
 /// Create a post-only order for testing
 fn create_post_only_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
     OrderType::PostOnly {
-        id: OrderId::from_u64(id),
-        price,
-        quantity,
-        side: Side::Buy,
-        timestamp: 1616823000000,
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: quantity,
+            side: Side::Buy,
+            timestamp: 1616823000000,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
     }
 }
 
@@ -129,33 +137,37 @@ fn create_reserve_order(
     replenish_amount: Option<u64>,
 ) -> OrderType<()> {
     OrderType::ReserveOrder {
-        id: OrderId::from_u64(id),
-        price,
-        visible_quantity: visible,
-        hidden_quantity: hidden,
-        side: Side::Buy,
-        timestamp: 1616823000000,
-        time_in_force: TimeInForce::Gtc,
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: visible,
+            side: Side::Buy,
+            timestamp: 1616823000000,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
+        reserve_quantity: hidden,
         replenish_threshold: threshold,
         replenish_amount,
         auto_replenish,
-        extra_fields: (),
     }
 }
 
 /// Create a pegged order for testing
 fn create_pegged_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
-    use pricelevel::PegReferenceType;
-
     OrderType::PeggedOrder {
-        id: OrderId::from_u64(id),
-        price,
-        quantity,
-        side: Side::Buy,
-        timestamp: 1616823000000,
-        time_in_force: TimeInForce::Gtc,
-        reference_price_offset: -50,
-        reference_price_type: PegReferenceType::BestAsk,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: quantity,
+            side: Side::Buy,
+            timestamp: 1616823000000,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
+        // Reference price offset (can be positive or negative)
+        reference_price_offset: -10,
+        // Reference price type
+        reference_price_type: PegReferenceType::BestBid,
     }
 }

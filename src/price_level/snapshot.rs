@@ -15,10 +15,10 @@ use std::sync::Arc;
 pub struct PriceLevelSnapshot {
     /// The price of this level.
     pub price: u64,
-    /// Total visible quantity at this level. This represents the sum of the visible quantities of all orders at this price level.
-    pub visible_quantity: u64,
-    /// Total hidden quantity at this level. This represents the sum of the hidden quantities of all orders at this price level.
-    pub hidden_quantity: u64,
+    /// Total display quantity at this level. This represents the sum of the display quantities of all orders at this price level.
+    pub display_quantity: u64,
+    /// Total reserve quantity at this level. This represents the sum of the reserve quantities of all orders at this price level.
+    pub reserve_quantity: u64,
     /// Number of orders at this level.
     pub order_count: usize,
     /// Orders at this level.  This is a vector of `Arc<OrderType<()>>` representing each individual order at this price level.
@@ -30,16 +30,16 @@ impl PriceLevelSnapshot {
     pub fn new(price: u64) -> Self {
         Self {
             price,
-            visible_quantity: 0,
-            hidden_quantity: 0,
+            display_quantity: 0,
+            reserve_quantity: 0,
             order_count: 0,
             orders: Vec::new(),
         }
     }
 
-    /// Get the total quantity (visible + hidden) at this price level
+    /// Get the total quantity (display + reserve) at this price level
     pub fn total_quantity(&self) -> u64 {
-        self.visible_quantity + self.hidden_quantity
+        self.display_quantity + self.reserve_quantity
     }
 
     /// Get an iterator over the orders in this snapshot
@@ -47,20 +47,32 @@ impl PriceLevelSnapshot {
         self.orders.iter()
     }
 
-    /// Recomputes aggregate fields (`visible_quantity`, `hidden_quantity`, and `order_count`) based on current orders.
+    /// Recomputes aggregate fields (`display_quantity`, `reserve_quantity`, and `order_count`) based on current orders.
     pub fn refresh_aggregates(&mut self) {
         self.order_count = self.orders.len();
 
-        let mut visible_total: u64 = 0;
-        let mut hidden_total: u64 = 0;
+        let mut display_total: u64 = 0;
+        let mut reserve_total: u64 = 0;
 
         for order in &self.orders {
-            visible_total = visible_total.saturating_add(order.visible_quantity());
-            hidden_total = hidden_total.saturating_add(order.hidden_quantity());
+            display_total = display_total.saturating_add(order.display_quantity());
+            reserve_total = reserve_total.saturating_add(order.reserve_quantity());
         }
 
-        self.visible_quantity = visible_total;
-        self.hidden_quantity = hidden_total;
+        self.display_quantity = display_total;
+        self.reserve_quantity = reserve_total;
+    }
+
+    /// Get the visible quantity (deprecated: use display_quantity field instead)
+    #[deprecated(since = "0.5.0", note = "Use display_quantity field instead")]
+    pub fn visible_quantity(&self) -> u64 {
+        self.display_quantity
+    }
+
+    /// Get the hidden quantity (deprecated: use reserve_quantity field instead)
+    #[deprecated(since = "0.5.0", note = "Use reserve_quantity field instead")]
+    pub fn hidden_quantity(&self) -> u64 {
+        self.reserve_quantity
     }
 }
 
@@ -156,8 +168,8 @@ impl Serialize for PriceLevelSnapshot {
         let mut state = serializer.serialize_struct("PriceLevelSnapshot", 5)?;
 
         state.serialize_field("price", &self.price)?;
-        state.serialize_field("visible_quantity", &self.visible_quantity)?;
-        state.serialize_field("hidden_quantity", &self.hidden_quantity)?;
+        state.serialize_field("display_quantity", &self.display_quantity)?;
+        state.serialize_field("reserve_quantity", &self.reserve_quantity)?;
         state.serialize_field("order_count", &self.order_count)?;
 
         let plain_orders: Vec<OrderType<()>> =
@@ -176,6 +188,9 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
     {
         enum Field {
             Price,
+            DisplayQuantity,
+            ReserveQuantity,
+            // Legacy fields for backward compatibility
             VisibleQuantity,
             HiddenQuantity,
             OrderCount,
@@ -193,7 +208,7 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
                     type Value = Field;
 
                     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                        formatter.write_str("`price`, `visible_quantity`, `hidden_quantity`, `order_count`, or `orders`")
+                        formatter.write_str("`price`, `display_quantity`, `reserve_quantity`, `order_count`, or `orders`")
                     }
 
                     fn visit_str<E>(self, value: &str) -> Result<Field, E>
@@ -202,6 +217,9 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
                     {
                         match value {
                             "price" => Ok(Field::Price),
+                            "display_quantity" => Ok(Field::DisplayQuantity),
+                            "reserve_quantity" => Ok(Field::ReserveQuantity),
+                            // Legacy field names for backward compatibility
                             "visible_quantity" => Ok(Field::VisibleQuantity),
                             "hidden_quantity" => Ok(Field::HiddenQuantity),
                             "order_count" => Ok(Field::OrderCount),
@@ -210,6 +228,8 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
                                 value,
                                 &[
                                     "price",
+                                    "display_quantity",
+                                    "reserve_quantity",
                                     "visible_quantity",
                                     "hidden_quantity",
                                     "order_count",
@@ -238,8 +258,8 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
                 V: MapAccess<'de>,
             {
                 let mut price = None;
-                let mut visible_quantity = None;
-                let mut hidden_quantity = None;
+                let mut display_quantity = None;
+                let mut reserve_quantity = None;
                 let mut order_count = None;
                 let mut orders = None;
 
@@ -251,17 +271,30 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
                             }
                             price = Some(map.next_value()?);
                         }
+                        Field::DisplayQuantity => {
+                            if display_quantity.is_some() {
+                                return Err(de::Error::duplicate_field("display_quantity"));
+                            }
+                            display_quantity = Some(map.next_value()?);
+                        }
+                        Field::ReserveQuantity => {
+                            if reserve_quantity.is_some() {
+                                return Err(de::Error::duplicate_field("reserve_quantity"));
+                            }
+                            reserve_quantity = Some(map.next_value()?);
+                        }
+                        // Legacy field support for backward compatibility
                         Field::VisibleQuantity => {
-                            if visible_quantity.is_some() {
+                            if display_quantity.is_some() {
                                 return Err(de::Error::duplicate_field("visible_quantity"));
                             }
-                            visible_quantity = Some(map.next_value()?);
+                            display_quantity = Some(map.next_value()?);
                         }
                         Field::HiddenQuantity => {
-                            if hidden_quantity.is_some() {
+                            if reserve_quantity.is_some() {
                                 return Err(de::Error::duplicate_field("hidden_quantity"));
                             }
-                            hidden_quantity = Some(map.next_value()?);
+                            reserve_quantity = Some(map.next_value()?);
                         }
                         Field::OrderCount => {
                             if order_count.is_some() {
@@ -280,18 +313,18 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
                 }
 
                 let price = price.ok_or_else(|| de::Error::missing_field("price"))?;
-                let visible_quantity =
-                    visible_quantity.ok_or_else(|| de::Error::missing_field("visible_quantity"))?;
-                let hidden_quantity =
-                    hidden_quantity.ok_or_else(|| de::Error::missing_field("hidden_quantity"))?;
+                let display_quantity =
+                    display_quantity.ok_or_else(|| de::Error::missing_field("display_quantity"))?;
+                let reserve_quantity =
+                    reserve_quantity.ok_or_else(|| de::Error::missing_field("reserve_quantity"))?;
                 let order_count =
                     order_count.ok_or_else(|| de::Error::missing_field("order_count"))?;
                 let orders = orders.unwrap_or_default();
 
                 Ok(PriceLevelSnapshot {
                     price,
-                    visible_quantity,
-                    hidden_quantity,
+                    display_quantity,
+                    reserve_quantity,
                     order_count,
                     orders,
                 })
@@ -300,8 +333,8 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
 
         const FIELDS: &[&str] = &[
             "price",
-            "visible_quantity",
-            "hidden_quantity",
+            "display_quantity",
+            "reserve_quantity",
             "order_count",
             "orders",
         ];
@@ -313,8 +346,8 @@ impl fmt::Display for PriceLevelSnapshot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "PriceLevelSnapshot:price={};visible_quantity={};hidden_quantity={};order_count={}",
-            self.price, self.visible_quantity, self.hidden_quantity, self.order_count
+            "PriceLevelSnapshot:price={};display_quantity={};reserve_quantity={};order_count={}",
+            self.price, self.display_quantity, self.reserve_quantity, self.order_count
         )
     }
 }
@@ -367,11 +400,11 @@ impl FromStr for PriceLevelSnapshot {
         let price_str = get_field("price")?;
         let price = parse_u64("price", price_str)?;
 
-        let visible_quantity_str = get_field("visible_quantity")?;
-        let visible_quantity = parse_u64("visible_quantity", visible_quantity_str)?;
+        let display_quantity_str = get_field("display_quantity")?;
+        let display_quantity = parse_u64("display_quantity", display_quantity_str)?;
 
-        let hidden_quantity_str = get_field("hidden_quantity")?;
-        let hidden_quantity = parse_u64("hidden_quantity", hidden_quantity_str)?;
+        let reserve_quantity_str = get_field("reserve_quantity")?;
+        let reserve_quantity = parse_u64("reserve_quantity", reserve_quantity_str)?;
 
         let order_count_str = get_field("order_count")?;
         let order_count = parse_usize("order_count", order_count_str)?;
@@ -379,8 +412,8 @@ impl FromStr for PriceLevelSnapshot {
         // Create a new snapshot - note that orders cannot be serialized/deserialized in this simple format
         Ok(PriceLevelSnapshot {
             price,
-            visible_quantity,
-            hidden_quantity,
+            display_quantity,
+            reserve_quantity,
             order_count,
             orders: Vec::new(),
         })

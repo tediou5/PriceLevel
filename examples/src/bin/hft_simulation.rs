@@ -1,7 +1,7 @@
 // examples/src/bin/hft_simulation.rs
 
 use pricelevel::{
-    OrderId, OrderType, OrderUpdate, PegReferenceType, PriceLevel, Side, TimeInForce,
+    OrderCommon, OrderId, OrderType, OrderUpdate, PegReferenceType, PriceLevel, Side, TimeInForce,
     UuidGenerator, setup_logger,
 };
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -315,72 +315,82 @@ fn setup_initial_orders(price_level: &PriceLevel, count: u64) {
 // Helper function to create a standard order
 fn create_standard_order(id: u64) -> OrderType<()> {
     OrderType::Standard {
-        id: OrderId::from_u64(id),
-        price: PRICE,
-        quantity: 10,
-        side: Side::Buy,
-        timestamp: get_current_timestamp(),
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price: PRICE,
+            display_quantity: 10,
+            side: Side::Buy,
+            timestamp: get_current_timestamp(),
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
     }
 }
 
 // Helper function to create an iceberg order
 fn create_iceberg_order(id: u64) -> OrderType<()> {
     OrderType::IcebergOrder {
-        id: OrderId::from_u64(id),
-        price: PRICE,
-        visible_quantity: 5,
-        hidden_quantity: 15,
-        side: Side::Buy,
-        timestamp: get_current_timestamp(),
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price: PRICE,
+            display_quantity: 5,
+            side: Side::Buy,
+            timestamp: get_current_timestamp(),
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
+        reserve_quantity: 15,
     }
 }
 
 // Helper function to create a post-only order
 fn create_post_only_order(id: u64) -> OrderType<()> {
     OrderType::PostOnly {
-        id: OrderId::from_u64(id),
-        price: PRICE,
-        quantity: 8,
-        side: Side::Buy,
-        timestamp: get_current_timestamp(),
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price: PRICE,
+            display_quantity: 8,
+            side: Side::Buy,
+            timestamp: get_current_timestamp(),
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
     }
 }
 
 // Helper function to create a reserve order
 fn create_reserve_order(id: u64) -> OrderType<()> {
     OrderType::ReserveOrder {
-        id: OrderId::from_u64(id),
-        price: PRICE,
-        visible_quantity: 5,
-        hidden_quantity: 15,
-        side: Side::Buy,
-        timestamp: get_current_timestamp(),
-        time_in_force: TimeInForce::Gtc,
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price: PRICE,
+            display_quantity: 5,
+            side: Side::Buy,
+            timestamp: get_current_timestamp(),
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
+        reserve_quantity: 15,
         replenish_threshold: 2,
         replenish_amount: Some(5),
         auto_replenish: true,
-        extra_fields: (),
     }
 }
 
 // Helper function to create a pegged order
 fn create_pegged_order(id: u64) -> OrderType<()> {
     OrderType::PeggedOrder {
-        id: OrderId::from_u64(id),
-        price: PRICE,
-        quantity: 10,
-        side: Side::Buy,
-        timestamp: get_current_timestamp(),
-        time_in_force: TimeInForce::Gtc,
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price: PRICE,
+            display_quantity: 10,
+            side: Side::Buy,
+            timestamp: get_current_timestamp(),
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
         reference_price_offset: -50,
         reference_price_type: PegReferenceType::BestAsk,
-        extra_fields: (),
     }
 }
 
@@ -395,8 +405,8 @@ fn get_current_timestamp() -> u64 {
 // Helper function to print price level information
 fn print_price_level_info(price_level: &PriceLevel) {
     info!("Price: {}", price_level.price());
-    info!("Visible quantity: {}", price_level.visible_quantity());
-    info!("Hidden quantity: {}", price_level.hidden_quantity());
+    info!("Display quantity: {}", price_level.display_quantity());
+    info!("Reserve quantity: {}", price_level.reserve_quantity());
     info!("Total quantity: {}", price_level.total_quantity());
     info!("Order count: {}", price_level.order_count());
     info!("Statistics: {}", price_level.stats());

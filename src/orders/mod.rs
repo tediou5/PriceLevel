@@ -14,6 +14,7 @@ mod tests;
 
 pub use base::{OrderId, Side};
 pub use order_type::DEFAULT_RESERVE_REPLENISH_AMOUNT;
+pub use order_type::OrderCommon;
 pub use order_type::OrderType;
 pub use pegged::PegReferenceType;
 pub use time_in_force::TimeInForce;

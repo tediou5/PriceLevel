@@ -1,5 +1,7 @@
 use criterion::Criterion;
-use pricelevel::{OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator};
+use pricelevel::{
+    OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+};
 use std::hint::black_box;
 use uuid::Uuid;
 
@@ -156,27 +158,31 @@ pub fn register_benchmarks(c: &mut Criterion) {
 /// Create a standard limit order for testing
 fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
     OrderType::Standard {
-        id: OrderId::from_u64(id),
-        price,
-        quantity,
-        side: Side::Buy,
-        timestamp: 1616823000000 + id,
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: quantity,
+            side: Side::Buy,
+            timestamp: 1616823000000 + id,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
     }
 }
 
 /// Create an iceberg order for testing
 fn create_iceberg_order(id: u64, price: u64, visible: u64, hidden: u64) -> OrderType<()> {
     OrderType::IcebergOrder {
-        id: OrderId::from_u64(id),
-        price,
-        visible_quantity: visible,
-        hidden_quantity: hidden,
-        side: Side::Buy,
-        timestamp: 1616823000000 + id,
-        time_in_force: TimeInForce::Gtc,
-        extra_fields: (),
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: visible,
+            side: Side::Buy,
+            timestamp: 1616823000000 + id,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
+        reserve_quantity: hidden,
     }
 }
 
@@ -191,17 +197,19 @@ fn create_reserve_order(
     replenish_amount: Option<u64>,
 ) -> OrderType<()> {
     OrderType::ReserveOrder {
-        id: OrderId::from_u64(id),
-        price,
-        visible_quantity: visible,
-        hidden_quantity: hidden,
-        side: Side::Buy,
-        timestamp: 1616823000000 + id,
-        time_in_force: TimeInForce::Gtc,
+        common: OrderCommon {
+            id: OrderId::from_u64(id),
+            price,
+            display_quantity: visible,
+            side: Side::Buy,
+            timestamp: 1616823000000 + id,
+            time_in_force: TimeInForce::Gtc,
+            extra_fields: (),
+        },
+        reserve_quantity: hidden,
         replenish_threshold: threshold,
         replenish_amount,
         auto_replenish,
-        extra_fields: (),
     }
 }
 

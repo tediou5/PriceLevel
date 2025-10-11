@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::errors::PriceLevelError;
-    use crate::orders::{OrderId, OrderType, OrderUpdate, PegReferenceType, Side, TimeInForce};
+    use crate::orders::{
+        OrderCommon, OrderId, OrderType, OrderUpdate, PegReferenceType, Side, TimeInForce,
+    };
     use crate::price_level::level::{PriceLevel, PriceLevelData};
     use crate::price_level::snapshot::SNAPSHOT_FORMAT_VERSION;
     use crate::{DEFAULT_RESERVE_REPLENISH_AMOUNT, UuidGenerator};
@@ -18,13 +20,15 @@ mod tests {
         let order_id = OrderId::from_u64(id);
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::Standard {
-            id: order_id,
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: order_id,
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         }
     }
 
@@ -48,8 +52,8 @@ mod tests {
             .expect("Failed to restore price level from snapshot JSON");
 
         assert_eq!(restored.price(), price_level.price());
-        assert_eq!(restored.visible_quantity(), price_level.visible_quantity());
-        assert_eq!(restored.hidden_quantity(), price_level.hidden_quantity());
+        assert_eq!(restored.display_quantity(), price_level.display_quantity());
+        assert_eq!(restored.reserve_quantity(), price_level.reserve_quantity());
         assert_eq!(restored.order_count(), price_level.order_count());
 
         let original_ids: Vec<OrderId> = price_level
@@ -100,8 +104,8 @@ mod tests {
 
         assert_eq!(restored_orders.len(), original_orders.len());
         assert_eq!(restored.order_count(), price_level.order_count());
-        assert_eq!(restored.visible_quantity(), price_level.visible_quantity());
-        assert_eq!(restored.hidden_quantity(), price_level.hidden_quantity());
+        assert_eq!(restored.display_quantity(), price_level.display_quantity());
+        assert_eq!(restored.reserve_quantity(), price_level.reserve_quantity());
 
         for (index, (expected, actual)) in original_orders
             .iter()
@@ -154,70 +158,80 @@ mod tests {
     fn create_iceberg_order(id: u64, price: u64, visible: u64, hidden: u64) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::IcebergOrder {
-            id: OrderId::from_u64(id),
-            price,
-            visible_quantity: visible,
-            hidden_quantity: hidden,
-            side: Side::Sell,
-            timestamp,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: visible,
+                side: Side::Sell,
+                timestamp,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: hidden,
         }
     }
 
     fn create_post_only_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::PostOnly {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         }
     }
 
     fn create_trailing_stop_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::TrailingStop {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Sell,
-            timestamp,
-            time_in_force: TimeInForce::Gtc,
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Sell,
+                timestamp,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             trail_amount: 100,
             last_reference_price: price + 100,
-            extra_fields: (),
         }
     }
 
     fn create_pegged_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::PeggedOrder {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp,
-            time_in_force: TimeInForce::Gtc,
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             reference_price_offset: -50,
             reference_price_type: PegReferenceType::BestAsk,
-            extra_fields: (),
         }
     }
 
     fn create_market_to_limit_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::MarketToLimit {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         }
     }
 
@@ -232,43 +246,49 @@ mod tests {
     ) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::ReserveOrder {
-            id: OrderId::from_u64(id),
-            price,
-            visible_quantity: visible,
-            hidden_quantity: hidden,
-            side: Side::Sell,
-            timestamp,
-            time_in_force: TimeInForce::Gtc,
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: visible,
+                side: Side::Sell,
+                timestamp,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: hidden,
             replenish_threshold: threshold,
             replenish_amount,
             auto_replenish,
-            extra_fields: (),
         }
     }
 
     fn create_fill_or_kill_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::Standard {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp,
-            time_in_force: TimeInForce::Fok,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp,
+                time_in_force: TimeInForce::Fok,
+                extra_fields: (),
+            },
         }
     }
 
     fn create_immediate_or_cancel_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::Standard {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp,
-            time_in_force: TimeInForce::Ioc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp,
+                time_in_force: TimeInForce::Ioc,
+                extra_fields: (),
+            },
         }
     }
 
@@ -280,13 +300,15 @@ mod tests {
     ) -> OrderType<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
         OrderType::Standard {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp,
-            time_in_force: TimeInForce::Gtd(expiry),
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp,
+                time_in_force: TimeInForce::Gtd(expiry),
+                extra_fields: (),
+            },
         }
     }
 
@@ -295,8 +317,8 @@ mod tests {
         let price_level = PriceLevel::new(10000);
 
         assert_eq!(price_level.price(), 10000);
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
         assert_eq!(price_level.total_quantity(), 0);
 
@@ -314,15 +336,15 @@ mod tests {
 
         let order_arc = price_level.add_order(order);
 
-        assert_eq!(price_level.visible_quantity(), 100);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 100);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 1);
         assert_eq!(price_level.total_quantity(), 100);
 
         // Verify the returned Arc contains the expected order
         assert_eq!(order_arc.id(), OrderId::from_u64(1));
         assert_eq!(order_arc.price(), 10000);
-        assert_eq!(order_arc.visible_quantity(), 100);
+        assert_eq!(order_arc.display_quantity(), 100);
 
         // Verify stats
         assert_eq!(price_level.stats().orders_added(), 1);
@@ -335,8 +357,8 @@ mod tests {
 
         price_level.add_order(order);
 
-        assert_eq!(price_level.visible_quantity(), 50);
-        assert_eq!(price_level.hidden_quantity(), 200);
+        assert_eq!(price_level.display_quantity(), 50);
+        assert_eq!(price_level.reserve_quantity(), 200);
         assert_eq!(price_level.order_count(), 1);
         assert_eq!(price_level.total_quantity(), 250);
     }
@@ -351,8 +373,8 @@ mod tests {
         price_level.add_order(create_post_only_order(3, 10000, 75));
         price_level.add_order(create_reserve_order(4, 10000, 25, 100, 100, true, None));
 
-        assert_eq!(price_level.visible_quantity(), 250); // 100 + 50 + 75 + 25
-        assert_eq!(price_level.hidden_quantity(), 300); // 0 + 200 + 0 + 100
+        assert_eq!(price_level.display_quantity(), 250); // 100 + 50 + 75 + 25
+        assert_eq!(price_level.reserve_quantity(), 300); // 0 + 200 + 0 + 100
         assert_eq!(price_level.order_count(), 4);
         assert_eq!(price_level.total_quantity(), 550);
 
@@ -376,8 +398,8 @@ mod tests {
         let removed = result.unwrap();
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().id(), OrderId::from_u64(1));
-        assert_eq!(price_level.visible_quantity(), 50);
-        assert_eq!(price_level.hidden_quantity(), 200);
+        assert_eq!(price_level.display_quantity(), 50);
+        assert_eq!(price_level.reserve_quantity(), 200);
         assert_eq!(price_level.order_count(), 1);
 
         // Cancel the iceberg order
@@ -388,8 +410,8 @@ mod tests {
         assert!(result.is_ok());
         let removed = result.unwrap();
         assert!(removed.is_some());
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
 
         // Try to cancel a non-existent order
@@ -437,7 +459,7 @@ mod tests {
         assert_eq!(match_result.order_id, taker_id);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
 
         assert_eq!(match_result.transactions.len(), 1);
@@ -473,7 +495,7 @@ mod tests {
         assert_eq!(match_result.order_id, taker_id);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 40);
+        assert_eq!(price_level.display_quantity(), 40);
         assert_eq!(price_level.order_count(), 1);
 
         // Verificar las transacciones generadas
@@ -508,7 +530,7 @@ mod tests {
         assert_eq!(match_result.order_id, taker_id);
         assert_eq!(match_result.remaining_quantity, 50); // 150 - 100 = 50 remaining
         assert!(!match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
 
         assert_eq!(match_result.transactions.len(), 1);
@@ -545,8 +567,8 @@ mod tests {
         assert_eq!(match_result.order_id, taker_id);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 50);
-        assert_eq!(price_level.hidden_quantity(), 50); // Hidden quantity reduced
+        assert_eq!(price_level.display_quantity(), 50);
+        assert_eq!(price_level.reserve_quantity(), 50); // Hidden quantity reduced
         assert_eq!(price_level.order_count(), 1);
         assert_eq!(match_result.transactions.len(), 1);
 
@@ -564,8 +586,8 @@ mod tests {
         let match_result = price_level.match_order(50, taker_id, &transaction_id_generator);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 50); // Visible quantity replenished
-        assert_eq!(price_level.hidden_quantity(), 0); // Hidden quantity reduced
+        assert_eq!(price_level.display_quantity(), 50); // Visible quantity replenished
+        assert_eq!(price_level.reserve_quantity(), 0); // Hidden quantity reduced
         assert_eq!(price_level.order_count(), 1);
         let transaction = &match_result.transactions.as_vec()[0];
 
@@ -581,8 +603,8 @@ mod tests {
         let match_result = price_level.match_order(50, taker_id, &transaction_id_generator);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
         assert_eq!(match_result.filled_order_ids.len(), 1);
         assert_eq!(match_result.filled_order_ids[0], OrderId::from_u64(1));
@@ -605,8 +627,8 @@ mod tests {
         assert_eq!(match_result.order_id, taker_id);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 50);
-        assert_eq!(price_level.hidden_quantity(), 100); // Hidden quantity reduced
+        assert_eq!(price_level.display_quantity(), 50);
+        assert_eq!(price_level.reserve_quantity(), 100); // Hidden quantity reduced
         assert_eq!(price_level.order_count(), 1);
         assert_eq!(match_result.transactions.len(), 1);
 
@@ -624,8 +646,8 @@ mod tests {
         let match_result = price_level.match_order(50, taker_id, &transaction_id_generator);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 50); // Visible quantity replenished
-        assert_eq!(price_level.hidden_quantity(), 50); // Hidden quantity reduced
+        assert_eq!(price_level.display_quantity(), 50); // Visible quantity replenished
+        assert_eq!(price_level.reserve_quantity(), 50); // Hidden quantity reduced
         assert_eq!(price_level.order_count(), 1);
         let transaction = &match_result.transactions.as_vec()[0];
 
@@ -643,8 +665,8 @@ mod tests {
         let match_result = price_level.match_order(150, taker_id, &transaction_id_generator);
         assert_eq!(match_result.remaining_quantity, 50);
         assert!(!match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
         assert_eq!(match_result.filled_order_ids.len(), 1);
         assert_eq!(match_result.filled_order_ids[0], OrderId::from_u64(1));
@@ -664,8 +686,8 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 20);
-        assert_eq!(price_level.hidden_quantity(), 150); // Hidden unchanged
+        assert_eq!(price_level.display_quantity(), 20);
+        assert_eq!(price_level.reserve_quantity(), 150); // Hidden unchanged
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -690,8 +712,8 @@ mod tests {
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
         // The order should be removed since the visible quantity reached 0 and auto_replenish is false
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -715,11 +737,11 @@ mod tests {
         assert!(match_result.is_complete);
         // The order should be replenished with the default amount
         assert_eq!(
-            price_level.visible_quantity(),
+            price_level.display_quantity(),
             DEFAULT_RESERVE_REPLENISH_AMOUNT
         );
         assert_eq!(
-            price_level.hidden_quantity(),
+            price_level.reserve_quantity(),
             150 - DEFAULT_RESERVE_REPLENISH_AMOUNT
         );
         assert_eq!(price_level.order_count(), 1);
@@ -743,8 +765,8 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 25); // 50 - 25 = 25
-        assert_eq!(price_level.hidden_quantity(), 150); // No change to hidden quantity
+        assert_eq!(price_level.display_quantity(), 25); // 50 - 25 = 25
+        assert_eq!(price_level.reserve_quantity(), 150); // No change to hidden quantity
 
         // Match more to go below threshold
         let taker_id = OrderId::from_u64(1000);
@@ -753,8 +775,8 @@ mod tests {
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
         // No automatic replenishment because auto_replenish is false
-        assert_eq!(price_level.visible_quantity(), 15); // 25 - 10 = 15, no replenishment
-        assert_eq!(price_level.hidden_quantity(), 150); // No change to hidden quantity
+        assert_eq!(price_level.display_quantity(), 15); // 25 - 10 = 15, no replenishment
+        assert_eq!(price_level.reserve_quantity(), 150); // No change to hidden quantity
     }
 
     #[test]
@@ -785,8 +807,8 @@ mod tests {
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
         // The order should be replenished with the custom amount
-        assert_eq!(price_level.visible_quantity(), custom_amount);
-        assert_eq!(price_level.hidden_quantity(), 150 - custom_amount);
+        assert_eq!(price_level.display_quantity(), custom_amount);
+        assert_eq!(price_level.reserve_quantity(), 150 - custom_amount);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -809,8 +831,8 @@ mod tests {
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
         // 1 visible unit will remain, which equals the safe threshold (1), so no replenishment occurs
-        assert_eq!(price_level.visible_quantity(), 1);
-        assert_eq!(price_level.hidden_quantity(), 150);
+        assert_eq!(price_level.display_quantity(), 1);
+        assert_eq!(price_level.reserve_quantity(), 150);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -832,8 +854,8 @@ mod tests {
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
         // The order should be removed from the price level
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -855,8 +877,8 @@ mod tests {
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
         // The order should be removed from the price level
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -877,8 +899,8 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 25); // 50 - 25 = 25
-        assert_eq!(price_level.hidden_quantity(), 150); // No replenishment yet
+        assert_eq!(price_level.display_quantity(), 25); // 50 - 25 = 25
+        assert_eq!(price_level.reserve_quantity(), 150); // No replenishment yet
 
         // Match more to go below threshold
         let taker_id = OrderId::from_u64(1000);
@@ -887,8 +909,8 @@ mod tests {
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
         // No automatic replenishment because auto_replenish is false
-        assert_eq!(price_level.visible_quantity(), 15); // 25 - 10 = 15
-        assert_eq!(price_level.hidden_quantity(), 150); // No change to hidden quantity
+        assert_eq!(price_level.display_quantity(), 15); // 25 - 10 = 15
+        assert_eq!(price_level.reserve_quantity(), 150); // No change in hidden quantity
     }
 
     #[test]
@@ -914,8 +936,8 @@ mod tests {
         assert_eq!(match_result.order_id, taker_id);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 20); // 100 - 80 = 20
-        assert_eq!(price_level.hidden_quantity(), 100); // Hidden quantity unchanged (still above threshold)
+        assert_eq!(price_level.display_quantity(), 20); // 100 - 80 = 20
+        assert_eq!(price_level.reserve_quantity(), 100); // Hidden quantity unchanged (still above threshold)
         assert_eq!(price_level.order_count(), 1);
         assert_eq!(match_result.transactions.len(), 1);
 
@@ -934,8 +956,8 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 90); // 20 - 10 = 10, then replenished to 90 (10 + 80)
-        assert_eq!(price_level.hidden_quantity(), 20); // 100 - 80 (replenish amount) = 20
+        assert_eq!(price_level.display_quantity(), 90); // 20 - 10 = 10, then replenished to 90 (10 + 80)
+        assert_eq!(price_level.reserve_quantity(), 20); // 100 - 80 (replenish amount) = 20
         assert_eq!(price_level.order_count(), 1);
 
         let transaction = &match_result.transactions.as_vec()[0];
@@ -952,8 +974,8 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 40); // 150 - 90 - 20 = 40
         assert!(!match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
         assert_eq!(match_result.filled_order_ids.len(), 1);
         assert_eq!(match_result.filled_order_ids[0], OrderId::from_u64(1));
@@ -992,7 +1014,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 40);
+        assert_eq!(price_level.display_quantity(), 40);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -1010,7 +1032,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -1028,7 +1050,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 50);
+        assert_eq!(price_level.display_quantity(), 50);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -1046,7 +1068,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -1064,7 +1086,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -1082,7 +1104,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 50);
+        assert_eq!(price_level.display_quantity(), 50);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -1100,7 +1122,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -1122,7 +1144,7 @@ mod tests {
         assert_eq!(match_result.order_id, taker_id);
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 10); // 25 - (140 - 50 - 75) = 10
+        assert_eq!(price_level.display_quantity(), 10); // 25 - (140 - 50 - 75) = 10
         assert_eq!(price_level.order_count(), 1);
 
         assert_eq!(match_result.transactions.len(), 3);
@@ -1157,8 +1179,8 @@ mod tests {
         let orders = price_level.iter_orders();
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].id(), OrderId::from_u64(3));
-        assert_eq!(orders[0].visible_quantity(), 10);
-        assert_eq!(orders[0].hidden_quantity(), 0);
+        assert_eq!(orders[0].display_quantity(), 10);
+        assert_eq!(orders[0].reserve_quantity(), 0);
     }
 
     #[test]
@@ -1174,8 +1196,8 @@ mod tests {
 
         // Verify snapshot data
         assert_eq!(snapshot.price, 10000);
-        assert_eq!(snapshot.visible_quantity, 150); // 100 + 50
-        assert_eq!(snapshot.hidden_quantity, 0);
+        assert_eq!(snapshot.display_quantity, 150); // 100 + 50
+        assert_eq!(snapshot.reserve_quantity, 0);
         assert_eq!(snapshot.order_count, 2);
         assert_eq!(snapshot.orders.len(), 2);
 
@@ -1213,7 +1235,7 @@ mod tests {
         assert_eq!(removed_order.unwrap().id(), OrderId::from_u64(1));
 
         // The price level should now be empty
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
 
         // Test updating price to same value (should return error)
@@ -1253,10 +1275,10 @@ mod tests {
         assert!(result.is_ok());
         let updated_order = result.unwrap();
         assert!(updated_order.is_some());
-        assert_eq!(updated_order.unwrap().visible_quantity(), 150);
+        assert_eq!(updated_order.unwrap().display_quantity(), 150);
 
         // The price level should reflect the new quantity
-        assert_eq!(price_level.visible_quantity(), 150);
+        assert_eq!(price_level.display_quantity(), 150);
         assert_eq!(price_level.order_count(), 1);
 
         // Update to decrease quantity
@@ -1271,10 +1293,10 @@ mod tests {
         assert!(result.is_ok());
         let updated_order = result.unwrap();
         assert!(updated_order.is_some());
-        assert_eq!(updated_order.unwrap().visible_quantity(), 50);
+        assert_eq!(updated_order.unwrap().display_quantity(), 50);
 
         // The price level should reflect the new quantity
-        assert_eq!(price_level.visible_quantity(), 50);
+        assert_eq!(price_level.display_quantity(), 50);
         assert_eq!(price_level.order_count(), 1);
 
         // Test updating non-existent order
@@ -1312,7 +1334,7 @@ mod tests {
         assert_eq!(removed_order.unwrap().id(), OrderId::from_u64(1));
 
         // The price level should now be empty
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
 
         // Test with same price but different quantity
@@ -1331,10 +1353,10 @@ mod tests {
         assert!(result.is_ok());
         let updated_order = result.unwrap();
         assert!(updated_order.is_some());
-        assert_eq!(updated_order.unwrap().visible_quantity(), 150);
+        assert_eq!(updated_order.unwrap().display_quantity(), 150);
 
         // The price level should reflect the new quantity
-        assert_eq!(price_level.visible_quantity(), 150);
+        assert_eq!(price_level.display_quantity(), 150);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -1363,7 +1385,7 @@ mod tests {
         assert_eq!(removed_order.unwrap().id(), OrderId::from_u64(1));
 
         // The price level should now be empty
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
 
         // Test with same price but different quantity
@@ -1383,10 +1405,10 @@ mod tests {
         assert!(result.is_ok());
         let updated_order = result.unwrap();
         assert!(updated_order.is_some());
-        assert_eq!(updated_order.unwrap().visible_quantity(), 150);
+        assert_eq!(updated_order.unwrap().display_quantity(), 150);
 
         // The price level should reflect the new quantity
-        assert_eq!(price_level.visible_quantity(), 150);
+        assert_eq!(price_level.display_quantity(), 150);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -1404,8 +1426,8 @@ mod tests {
 
         // Verify data fields
         assert_eq!(data.price, 10000);
-        assert_eq!(data.visible_quantity, 150); // 100 + 50
-        assert_eq!(data.hidden_quantity, 0);
+        assert_eq!(data.display_quantity, 150); // 100 + 50
+        assert_eq!(data.reserve_quantity, 0);
         assert_eq!(data.order_count, 2);
         assert_eq!(data.orders.len(), 2);
 
@@ -1421,8 +1443,8 @@ mod tests {
         // Create PriceLevelData directly
         let data = PriceLevelData {
             price: 10000,
-            visible_quantity: 150,
-            hidden_quantity: 0,
+            display_quantity: 150,
+            reserve_quantity: 0,
             order_count: 2,
             orders: vec![
                 create_standard_order(1, 10000, 100),
@@ -1438,8 +1460,8 @@ mod tests {
 
         // Verify price level properties
         assert_eq!(price_level.price(), 10000);
-        assert_eq!(price_level.visible_quantity(), 150);
-        assert_eq!(price_level.hidden_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 150);
+        assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 2);
 
         // Verify orders
@@ -1461,8 +1483,8 @@ mod tests {
 
         // Verify the format
         assert!(display_str.starts_with("PriceLevel:price=10000;"));
-        assert!(display_str.contains("visible_quantity=100"));
-        assert!(display_str.contains("hidden_quantity=0"));
+        assert!(display_str.contains("display_quantity=100"));
+        assert!(display_str.contains("reserve_quantity=0"));
         assert!(display_str.contains("order_count=1"));
         assert!(display_str.contains("orders=["));
         assert!(display_str.contains("Standard:id=00000000-0000-0001-0000-000000000000"));
@@ -1478,7 +1500,7 @@ mod tests {
         price_level.add_order(create_reserve_order(4, 10000, 100, 100, 20, true, None));
         price_level.add_order(create_iceberg_order(5, 10000, 50, 100));
 
-        let input = "PriceLevel:price=10000;visible_quantity=375;hidden_quantity=200;order_count=5;orders=[Standard:id=00000000-0000-0001-0000-000000000000;price=10000;quantity=50;side=BUY;timestamp=1616823000000;time_in_force=GTC,Standard:id=00000000-0000-0002-0000-000000000000;price=10000;quantity=75;side=BUY;timestamp=1616823000001;time_in_force=GTC,Standard:id=00000000-0000-0003-0000-000000000000;price=10000;quantity=100;side=BUY;timestamp=1616823000002;time_in_force=GTD-1617000000000,ReserveOrder:id=00000000-0000-0004-0000-000000000000;price=10000;visible_quantity=100;hidden_quantity=100;side=SELL;timestamp=1616823000003;time_in_force=GTC;replenish_threshold=20;replenish_amount=None;auto_replenish=true,IcebergOrder:id=00000000-0000-0005-0000-000000000000;price=10000;visible_quantity=50;hidden_quantity=100;side=SELL;timestamp=1616823000004;time_in_force=GTC]";
+        let input = "PriceLevel:price=10000;display_quantity=375;reserve_quantity=200;order_count=5;orders=[Standard:id=00000000-0000-0001-0000-000000000000;price=10000;display_quantity=50;side=BUY;timestamp=1616823000000;time_in_force=GTC,Standard:id=00000000-0000-0002-0000-000000000000;price=10000;display_quantity=75;side=BUY;timestamp=1616823000001;time_in_force=GTC,Standard:id=00000000-0000-0003-0000-000000000000;price=10000;display_quantity=100;side=BUY;timestamp=1616823000002;time_in_force=GTD-1617000000000,ReserveOrder:id=00000000-0000-0004-0000-000000000000;price=10000;display_quantity=100;reserve_quantity=100;side=SELL;timestamp=1616823000003;time_in_force=GTC;replenish_threshold=20;replenish_amount=None;auto_replenish=true,IcebergOrder:id=00000000-0000-0005-0000-000000000000;price=10000;display_quantity=50;reserve_quantity=100;side=SELL;timestamp=1616823000004;time_in_force=GTC]";
         let result = PriceLevel::from_str(input);
 
         if let Err(ref err) = result {
@@ -1491,8 +1513,8 @@ mod tests {
 
         // Verify price level properties
         assert_eq!(price_level.price(), 10000);
-        assert_eq!(price_level.visible_quantity(), 375);
-        assert_eq!(price_level.hidden_quantity(), 200);
+        assert_eq!(price_level.display_quantity(), 375);
+        assert_eq!(price_level.reserve_quantity(), 200);
         assert_eq!(price_level.order_count(), 5);
 
         // Verify the order
@@ -1500,7 +1522,7 @@ mod tests {
         assert_eq!(orders.len(), 5);
         assert_eq!(orders[0].id(), OrderId::from_u64(1));
         assert_eq!(orders[0].price(), 10000);
-        assert_eq!(orders[0].visible_quantity(), 50);
+        assert_eq!(orders[0].display_quantity(), 50);
     }
 
     // Test serialization and deserialization for PriceLevel
@@ -1524,8 +1546,8 @@ mod tests {
 
         // Verify deserialized price level
         assert_eq!(deserialized.price(), 10000);
-        assert_eq!(deserialized.visible_quantity(), 100);
-        assert_eq!(deserialized.hidden_quantity(), 0);
+        assert_eq!(deserialized.display_quantity(), 100);
+        assert_eq!(deserialized.reserve_quantity(), 0);
         assert_eq!(deserialized.order_count(), 1);
 
         // Verify the order in the deserialized price level
@@ -1533,7 +1555,7 @@ mod tests {
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].id(), OrderId::from_u64(1));
         assert_eq!(orders[0].price(), 10000);
-        assert_eq!(orders[0].visible_quantity(), 100);
+        assert_eq!(orders[0].display_quantity(), 100);
     }
 
     // In price_level/level.rs test module or in a separate test file
@@ -1553,7 +1575,7 @@ mod tests {
 
         assert_eq!(match_result.remaining_quantity, 0);
         assert!(match_result.is_complete);
-        assert_eq!(price_level.visible_quantity(), 100); // 200 - 100 = 100
+        assert_eq!(price_level.display_quantity(), 100); // 200 - 100 = 100
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -1572,7 +1594,7 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
-        assert_eq!(price_level.visible_quantity(), 0);
+        assert_eq!(price_level.display_quantity(), 0);
         assert_eq!(price_level.order_count(), 0);
     }
 
@@ -1592,8 +1614,8 @@ mod tests {
 
         assert!(result.is_ok());
         let updated_order = result.unwrap().unwrap();
-        assert_eq!(updated_order.visible_quantity(), 150);
-        assert_eq!(price_level.visible_quantity(), 150);
+        assert_eq!(updated_order.display_quantity(), 150);
+        assert_eq!(price_level.display_quantity(), 150);
         assert_eq!(price_level.order_count(), 1);
     }
 
@@ -1614,12 +1636,12 @@ mod tests {
         // Verify deserialized state matches original
         assert_eq!(deserialized.price(), price_level.price());
         assert_eq!(
-            deserialized.visible_quantity(),
-            price_level.visible_quantity()
+            deserialized.display_quantity(),
+            price_level.display_quantity()
         );
         assert_eq!(
-            deserialized.hidden_quantity(),
-            price_level.hidden_quantity()
+            deserialized.reserve_quantity(),
+            price_level.reserve_quantity()
         );
         assert_eq!(deserialized.order_count(), price_level.order_count());
     }
@@ -1629,13 +1651,15 @@ mod tests {
         // Test lines 187-188
         let price_level = PriceLevel::new(10000);
         let order = OrderType::<()>::Standard {
-            id: OrderId::from_u64(1),
-            price: 10000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 10000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         price_level.add_order(order);
 
@@ -1681,13 +1705,15 @@ mod tests {
 
         // Add an order
         let order = OrderType::<()>::Standard {
-            id: OrderId::from_u64(1),
-            price: 10000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 10000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         price_level.add_order(order);
 
@@ -1726,13 +1752,15 @@ mod tests {
 
         // Add an order
         let order = OrderType::<()>::Standard {
-            id: OrderId::from_u64(1),
-            price: 10000,
-            quantity: 50,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 10000,
+                display_quantity: 50,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         price_level.add_order(order);
 
@@ -1747,41 +1775,45 @@ mod tests {
         assert!(result.unwrap().is_some());
 
         // Verify quantity increased
-        assert_eq!(price_level.visible_quantity(), 100);
+        assert_eq!(price_level.display_quantity(), 100);
     }
 
     #[test]
-    fn test_price_level_update_hidden_quantity() {
+    fn test_price_level_update_reserve_quantity() {
         // Test lines 488, 498
         let price_level = PriceLevel::new(10000);
 
         // Add an iceberg order with visible and hidden quantities
         let order = OrderType::IcebergOrder {
-            id: OrderId::from_u64(1),
-            price: 10000,
-            visible_quantity: 50,
-            hidden_quantity: 150,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 10000,
+                display_quantity: 50,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 150,
         };
         price_level.add_order(order);
 
         // Verify initial quantities
-        assert_eq!(price_level.visible_quantity(), 50);
-        assert_eq!(price_level.hidden_quantity(), 150);
+        assert_eq!(price_level.display_quantity(), 50);
+        assert_eq!(price_level.reserve_quantity(), 150);
 
         // Create a new iceberg order with different quantities
         let new_order = OrderType::IcebergOrder {
-            id: OrderId::from_u64(1),
-            price: 10000,
-            visible_quantity: 40,
-            hidden_quantity: 200,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 10000,
+                display_quantity: 40,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 200,
         };
 
         // Test increasing hidden quantity
@@ -1792,8 +1824,8 @@ mod tests {
         price_level.add_order(new_order);
 
         // Verify both visible and hidden quantities were updated
-        assert_eq!(price_level.visible_quantity(), 40);
-        assert_eq!(price_level.hidden_quantity(), 200);
+        assert_eq!(price_level.display_quantity(), 40);
+        assert_eq!(price_level.reserve_quantity(), 200);
     }
 
     #[test]
@@ -1803,13 +1835,15 @@ mod tests {
 
         // Add an order
         let order = OrderType::<()>::Standard {
-            id: OrderId::from_u64(1),
-            price: 10000,
-            quantity: 50,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 10000,
+                display_quantity: 50,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         price_level.add_order(order);
 
@@ -1825,7 +1859,7 @@ mod tests {
         assert!(result.unwrap().is_some());
 
         // Verify quantity was updated but price remained the same
-        assert_eq!(price_level.visible_quantity(), 100);
+        assert_eq!(price_level.display_quantity(), 100);
         assert_eq!(price_level.price(), 10000);
     }
 
@@ -1838,25 +1872,29 @@ mod tests {
 
         // Add some orders
         let order1 = OrderType::<()>::Standard {
-            id: OrderId::from_u64(1),
-            price: 10000,
-            quantity: 50,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 10000,
+                display_quantity: 50,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         price_level.add_order(order1);
 
         let order2 = OrderType::<()>::IcebergOrder {
-            id: OrderId::from_u64(2),
-            price: 10000,
-            visible_quantity: 30,
-            hidden_quantity: 70,
-            side: Side::Buy,
-            timestamp: 1616823000001,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(2),
+                price: 10000,
+                display_quantity: 30,
+                side: Side::Buy,
+                timestamp: 1616823000001,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 70,
         };
         price_level.add_order(order2);
 
@@ -1865,8 +1903,8 @@ mod tests {
 
         // Verify data
         assert_eq!(data.price, 10000);
-        assert_eq!(data.visible_quantity, 80); // 50 + 30
-        assert_eq!(data.hidden_quantity, 70);
+        assert_eq!(data.display_quantity, 80); // 50 + 30
+        assert_eq!(data.reserve_quantity, 70);
         assert_eq!(data.order_count, 2);
         assert_eq!(data.orders.len(), 2);
 
@@ -1877,8 +1915,8 @@ mod tests {
         // Verify converted price level
         let converted_level = result.unwrap();
         assert_eq!(converted_level.price(), 10000);
-        assert_eq!(converted_level.visible_quantity(), 80);
-        assert_eq!(converted_level.hidden_quantity(), 70);
+        assert_eq!(converted_level.display_quantity(), 80);
+        assert_eq!(converted_level.reserve_quantity(), 70);
         assert_eq!(converted_level.order_count(), 2);
 
         // Test display implementation
@@ -1898,8 +1936,8 @@ mod tests {
         // Test deserialization
         let deserialized: PriceLevel = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized.price(), 10000);
-        assert_eq!(deserialized.visible_quantity(), 80);
-        assert_eq!(deserialized.hidden_quantity(), 70);
+        assert_eq!(deserialized.display_quantity(), 80);
+        assert_eq!(deserialized.reserve_quantity(), 70);
         assert_eq!(deserialized.order_count(), 2);
     }
 }

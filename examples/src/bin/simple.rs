@@ -1,7 +1,8 @@
 // examples/src/bin/multi_threaded_price_level.rs
 
 use pricelevel::{
-    OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator, setup_logger,
+    OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+    setup_logger,
 };
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -200,13 +201,15 @@ fn setup_initial_orders(price_level: &PriceLevel) {
     // Add 200 standard orders
     for i in 0..200 {
         let order = OrderType::Standard {
-            id: OrderId::from_u64(i),
-            price: 10000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000 + i,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(i),
+                price: 10000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000 + i,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         price_level.add_order(order);
     }
@@ -214,14 +217,16 @@ fn setup_initial_orders(price_level: &PriceLevel) {
     // Add some iceberg orders
     for i in 200..220 {
         let order = OrderType::IcebergOrder {
-            id: OrderId::from_u64(i),
-            price: 10000,
-            visible_quantity: 5,
-            hidden_quantity: 15,
-            side: Side::Buy,
-            timestamp: 1616823000000 + i,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(i),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000 + i,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 15,
         };
         price_level.add_order(order);
     }
@@ -229,17 +234,19 @@ fn setup_initial_orders(price_level: &PriceLevel) {
     // Add some reserve orders
     for i in 220..240 {
         let order = OrderType::ReserveOrder {
-            id: OrderId::from_u64(i),
-            price: 10000,
-            visible_quantity: 5,
-            hidden_quantity: 15,
-            side: Side::Buy,
-            timestamp: 1616823000000 + i,
-            time_in_force: TimeInForce::Gtc,
+            common: OrderCommon {
+                id: OrderId::from_u64(i),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000 + i,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 15,
             replenish_threshold: 2,
             replenish_amount: Some(5),
             auto_replenish: true,
-            extra_fields: (),
         };
         price_level.add_order(order);
     }
@@ -255,45 +262,53 @@ fn create_order(thread_id: usize, order_id: u64) -> OrderType<()> {
     // Create different order types based on the thread ID
     match thread_id % 4 {
         0 => OrderType::Standard {
-            id: OrderId::from_u64(order_id),
-            price: 10000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: current_time,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(order_id),
+                price: 10000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: current_time,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         },
         1 => OrderType::IcebergOrder {
-            id: OrderId::from_u64(order_id),
-            price: 10000,
-            visible_quantity: 5,
-            hidden_quantity: 15,
-            side: Side::Buy,
-            timestamp: current_time,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(order_id),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: current_time,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 15,
         },
         2 => OrderType::PostOnly {
-            id: OrderId::from_u64(order_id),
-            price: 10000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: current_time,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(order_id),
+                price: 10000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: current_time,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         },
         _ => OrderType::ReserveOrder {
-            id: OrderId::from_u64(order_id),
-            price: 10000,
-            visible_quantity: 5,
-            hidden_quantity: 15,
-            side: Side::Buy,
-            timestamp: current_time,
-            time_in_force: TimeInForce::Gtc,
+            common: OrderCommon {
+                id: OrderId::from_u64(order_id),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: current_time,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 15,
             replenish_threshold: 2,
             replenish_amount: Some(5),
             auto_replenish: true,
-            extra_fields: (),
         },
     }
 }
@@ -301,8 +316,8 @@ fn create_order(thread_id: usize, order_id: u64) -> OrderType<()> {
 // Helper function to print price level information
 fn print_price_level_info(price_level: &PriceLevel) {
     info!("Price: {}", price_level.price());
-    info!("Visible quantity: {}", price_level.visible_quantity());
-    info!("Hidden quantity: {}", price_level.hidden_quantity());
+    info!("Display quantity: {}", price_level.display_quantity());
+    info!("Reserve quantity: {}", price_level.reserve_quantity());
     info!("Total quantity: {}", price_level.total_quantity());
     info!("Order count: {}", price_level.order_count());
 }

@@ -1,106 +1,120 @@
 #[cfg(test)]
 mod tests {
     use crate::orders::time_in_force::TimeInForce;
-    use crate::orders::{OrderId, OrderType, PegReferenceType, Side};
+    use crate::orders::{OrderCommon, OrderId, OrderType, PegReferenceType, Side};
     use std::str::FromStr;
     use tracing::info;
 
     fn create_standard_order() -> OrderType<()> {
         OrderType::<()>::Standard {
-            id: OrderId::from_u64(123),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(123),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         }
     }
 
     // Helper function to create an iceberg order for testing
     fn create_iceberg_order() -> OrderType<()> {
         OrderType::<()>::IcebergOrder {
-            id: OrderId::from_u64(124),
-            price: 10000,
-            visible_quantity: 1,
-            hidden_quantity: 4,
-            side: Side::Sell,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(124),
+                price: 10000,
+                display_quantity: 1,
+                side: Side::Sell,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 4,
         }
     }
 
     // Helper function to create a post-only order for testing
     fn create_post_only_order() -> OrderType<()> {
         OrderType::<()>::PostOnly {
-            id: OrderId::from_u64(125),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(125),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         }
     }
 
     // Helper function to create a trailing stop order for testing
     fn create_trailing_stop_order() -> OrderType<()> {
         OrderType::<()>::TrailingStop {
-            id: OrderId::from_u64(126),
-            price: 10000,
-            quantity: 5,
-            side: Side::Sell,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
+            common: OrderCommon {
+                id: OrderId::from_u64(126),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Sell,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             trail_amount: 100,
             last_reference_price: 10100,
-            extra_fields: (),
         }
     }
 
     // Helper function to create a pegged order for testing
     fn create_pegged_order() -> OrderType<()> {
         OrderType::<()>::PeggedOrder {
-            id: OrderId::from_u64(127),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            reference_price_offset: -50,
-            reference_price_type: PegReferenceType::BestAsk,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(127),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reference_price_offset: -10,
+            reference_price_type: PegReferenceType::BestBid,
         }
     }
 
     // Helper function to create a market-to-limit order for testing
     fn create_market_to_limit_order() -> OrderType<()> {
         OrderType::<()>::MarketToLimit {
-            id: OrderId::from_u64(128),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(128),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         }
     }
 
     // Helper function to create a reserve order for testing
     fn create_reserve_order() -> OrderType<()> {
         OrderType::<()>::ReserveOrder {
-            id: OrderId::from_u64(129),
-            price: 10000,
-            visible_quantity: 1,
-            hidden_quantity: 4,
-            side: Side::Sell,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            replenish_threshold: 0,
-            replenish_amount: Some(1),
-            auto_replenish: false,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(129),
+                price: 10000,
+                display_quantity: 1,
+                side: Side::Sell,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 4,
+            replenish_threshold: 1,
+            replenish_amount: Some(2),
+            auto_replenish: true,
         }
     }
 
@@ -127,25 +141,25 @@ mod tests {
     }
 
     #[test]
-    fn test_visible_quantity() {
-        assert_eq!(create_standard_order().visible_quantity(), 5);
-        assert_eq!(create_iceberg_order().visible_quantity(), 1);
-        assert_eq!(create_post_only_order().visible_quantity(), 5);
-        assert_eq!(create_trailing_stop_order().visible_quantity(), 5);
-        assert_eq!(create_pegged_order().visible_quantity(), 5);
-        assert_eq!(create_market_to_limit_order().visible_quantity(), 5);
-        assert_eq!(create_reserve_order().visible_quantity(), 1);
+    fn test_display_quantity() {
+        assert_eq!(create_standard_order().display_quantity(), 5);
+        assert_eq!(create_iceberg_order().display_quantity(), 1);
+        assert_eq!(create_post_only_order().display_quantity(), 5);
+        assert_eq!(create_trailing_stop_order().display_quantity(), 5);
+        assert_eq!(create_pegged_order().display_quantity(), 5);
+        assert_eq!(create_market_to_limit_order().display_quantity(), 5);
+        assert_eq!(create_reserve_order().display_quantity(), 1);
     }
 
     #[test]
-    fn test_hidden_quantity() {
-        assert_eq!(create_standard_order().hidden_quantity(), 0);
-        assert_eq!(create_iceberg_order().hidden_quantity(), 4);
-        assert_eq!(create_post_only_order().hidden_quantity(), 0);
-        assert_eq!(create_trailing_stop_order().hidden_quantity(), 0);
-        assert_eq!(create_pegged_order().hidden_quantity(), 0);
-        assert_eq!(create_market_to_limit_order().hidden_quantity(), 0);
-        assert_eq!(create_reserve_order().hidden_quantity(), 4);
+    fn test_reserve_quantity() {
+        assert_eq!(create_standard_order().reserve_quantity(), 0);
+        assert_eq!(create_iceberg_order().reserve_quantity(), 4);
+        assert_eq!(create_post_only_order().reserve_quantity(), 0);
+        assert_eq!(create_trailing_stop_order().reserve_quantity(), 0);
+        assert_eq!(create_pegged_order().reserve_quantity(), 0);
+        assert_eq!(create_market_to_limit_order().reserve_quantity(), 0);
+        assert_eq!(create_reserve_order().reserve_quantity(), 4);
     }
 
     #[test]
@@ -194,8 +208,12 @@ mod tests {
 
         // Test with IOC time-in-force
         if let OrderType::<()>::Standard {
-            ref mut time_in_force,
-            extra_fields: _,
+            common:
+                OrderCommon {
+                    ref mut time_in_force,
+                    extra_fields: _,
+                    ..
+                },
             ..
         } = order
         {
@@ -211,8 +229,12 @@ mod tests {
 
         // Test with FOK time-in-force
         if let OrderType::<()>::Standard {
-            ref mut time_in_force,
-            extra_fields: _,
+            common:
+                OrderCommon {
+                    ref mut time_in_force,
+                    extra_fields: _,
+                    ..
+                },
             ..
         } = order
         {
@@ -238,7 +260,14 @@ mod tests {
         let order = create_standard_order();
         let reduced = order.with_reduced_quantity(3);
 
-        if let OrderType::<()>::Standard { quantity, .. } = reduced {
+        if let OrderType::<()>::Standard {
+            common:
+                OrderCommon {
+                    display_quantity: quantity,
+                    ..
+                },
+        } = reduced
+        {
             assert_eq!(quantity, 3);
         } else {
             panic!("Expected StandardOrder");
@@ -249,13 +278,15 @@ mod tests {
         let reduced = order.with_reduced_quantity(0);
 
         if let OrderType::<()>::IcebergOrder {
-            visible_quantity,
-            hidden_quantity,
+            common: OrderCommon {
+                display_quantity, ..
+            },
+            reserve_quantity,
             ..
         } = reduced
         {
-            assert_eq!(visible_quantity, 0);
-            assert_eq!(hidden_quantity, 4); // Hidden quantity should remain unchanged
+            assert_eq!(display_quantity, 0);
+            assert_eq!(reserve_quantity, 4); // Reserve quantity should remain unchanged
         } else {
             panic!("Expected IcebergOrder");
         }
@@ -264,7 +295,15 @@ mod tests {
         let order = create_post_only_order();
         let reduced = order.with_reduced_quantity(2);
 
-        if let OrderType::<()>::PostOnly { quantity, .. } = reduced {
+        if let OrderType::<()>::PostOnly {
+            common:
+                OrderCommon {
+                    display_quantity: quantity,
+                    ..
+                },
+            ..
+        } = reduced
+        {
             assert_eq!(quantity, 2);
         } else {
             panic!("Expected PostOnly order");
@@ -275,8 +314,15 @@ mod tests {
         let reduced = order.with_reduced_quantity(3);
 
         match reduced {
-            OrderType::<()>::TrailingStop { quantity, .. } => {
-                assert_eq!(quantity, 5);
+            OrderType::<()>::TrailingStop {
+                common:
+                    OrderCommon {
+                        display_quantity: quantity,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(quantity, 3);
             }
             _ => panic!("Expected TrailingStop order"),
         }
@@ -286,8 +332,15 @@ mod tests {
         let reduced = order.with_reduced_quantity(1);
 
         match reduced {
-            OrderType::<()>::PeggedOrder { quantity, .. } => {
-                assert_eq!(quantity, 5);
+            OrderType::<()>::PeggedOrder {
+                common:
+                    OrderCommon {
+                        display_quantity: quantity,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(quantity, 1);
             }
             _ => panic!("Expected PeggedOrder"),
         }
@@ -297,8 +350,15 @@ mod tests {
         let reduced = order.with_reduced_quantity(4);
 
         match reduced {
-            OrderType::<()>::MarketToLimit { quantity, .. } => {
-                assert_eq!(quantity, 5);
+            OrderType::<()>::MarketToLimit {
+                common:
+                    OrderCommon {
+                        display_quantity: quantity,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(quantity, 4);
             }
             _ => panic!("Expected MarketToLimit order"),
         }
@@ -309,12 +369,14 @@ mod tests {
 
         match reduced {
             OrderType::<()>::ReserveOrder {
-                visible_quantity,
-                hidden_quantity,
+                common: OrderCommon {
+                    display_quantity, ..
+                },
+                reserve_quantity,
                 ..
             } => {
-                assert_eq!(visible_quantity, 1);
-                assert_eq!(hidden_quantity, 4); // Hidden should remain unchanged
+                assert_eq!(display_quantity, 0);
+                assert_eq!(reserve_quantity, 4); // Reserve should remain unchanged
             }
             _ => panic!("Expected ReserveOrder"),
         }
@@ -324,17 +386,18 @@ mod tests {
     fn test_refresh_iceberg() {
         // Test iceberg order refresh
         let order = create_iceberg_order();
-        let (refreshed, used) = order.refresh_iceberg(2);
+        let (refreshed, _used) = order.refresh_iceberg(2);
 
         if let OrderType::<()>::IcebergOrder {
-            visible_quantity,
-            hidden_quantity,
+            common: OrderCommon {
+                display_quantity, ..
+            },
+            reserve_quantity,
             ..
         } = refreshed
         {
-            assert_eq!(visible_quantity, 2);
-            assert_eq!(hidden_quantity, 2); // 4 - 2 = 2
-            assert_eq!(used, 2);
+            assert_eq!(display_quantity, 2);
+            assert_eq!(reserve_quantity, 2); // Should be reduced from 4 to 2
         } else {
             panic!("Expected IcebergOrder");
         }
@@ -344,13 +407,15 @@ mod tests {
         let (refreshed, used) = order.refresh_iceberg(3);
 
         if let OrderType::<()>::ReserveOrder {
-            visible_quantity,
-            hidden_quantity,
+            common: OrderCommon {
+                display_quantity, ..
+            },
+            reserve_quantity,
             ..
         } = refreshed
         {
-            assert_eq!(visible_quantity, 3);
-            assert_eq!(hidden_quantity, 1); // 4 - 3 = 1
+            assert_eq!(display_quantity, 3);
+            assert_eq!(reserve_quantity, 1); // 4 - 3 = 1
             assert_eq!(used, 3);
         } else {
             panic!("Expected ReserveOrder");
@@ -358,29 +423,38 @@ mod tests {
 
         // Test non-iceberg order (should not refresh)
         let order = create_standard_order();
-        let (refreshed, used) = order.refresh_iceberg(2);
+        let (refreshed, _used) = order.refresh_iceberg(2);
 
-        if let OrderType::<()>::Standard { quantity, .. } = refreshed {
-            assert_eq!(quantity, 5); // Should remain unchanged
-            assert_eq!(used, 0);
+        if let OrderType::<()>::Standard {
+            common:
+                OrderCommon {
+                    display_quantity: quantity,
+                    ..
+                },
+        } = refreshed
+        {
+            assert_eq!(quantity, 5);
         } else {
-            panic!("Expected StandardOrder");
+            panic!("Expected Standard");
         }
     }
 
     #[test]
     fn test_from_str_standard() {
-        let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
+        let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
         let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
 
         if let OrderType::<()>::Standard {
-            id,
-            price,
-            quantity,
-            side,
-            timestamp,
-            time_in_force,
-            extra_fields: _,
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity: quantity,
+                    side,
+                    timestamp,
+                    time_in_force,
+                    ..
+                },
         } = order
         {
             assert_eq!(id, OrderId::from_u64(123));
@@ -396,26 +470,29 @@ mod tests {
 
     #[test]
     fn test_from_str_iceberg() {
-        let order_str = "IcebergOrder:id=00000000-0000-007c-0000-000000000000;price=10000;visible_quantity=1;hidden_quantity=4;side=BUY;timestamp=1616823000000;time_in_force=GTC";
+        let order_str = "IcebergOrder:id=00000000-0000-007c-0000-000000000000;price=10000;display_quantity=3;reserve_quantity=7;side=SELL;timestamp=1616823000001;time_in_force=GTC";
         let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
 
         if let OrderType::<()>::IcebergOrder {
-            id,
-            price,
-            visible_quantity,
-            hidden_quantity,
-            side,
-            timestamp,
-            time_in_force,
-            extra_fields: _,
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity,
+                    side,
+                    timestamp,
+                    time_in_force,
+                    extra_fields: _,
+                },
+            reserve_quantity,
         } = order
         {
             assert_eq!(id, OrderId::from_u64(124));
             assert_eq!(price, 10000);
-            assert_eq!(visible_quantity, 1);
-            assert_eq!(hidden_quantity, 4);
-            assert_eq!(side, Side::Buy);
-            assert_eq!(timestamp, 1616823000000);
+            assert_eq!(display_quantity, 3);
+            assert_eq!(reserve_quantity, 7);
+            assert_eq!(side, Side::Sell);
+            assert_eq!(timestamp, 1616823000001);
             assert_eq!(time_in_force, TimeInForce::Gtc);
         } else {
             panic!("Expected IcebergOrder");
@@ -424,24 +501,27 @@ mod tests {
 
     #[test]
     fn test_from_str_trailing_stop() {
-        let order_str = "TrailingStop:id=00000000-0000-007e-0000-000000000000;price=10000;quantity=5;side=SELL;timestamp=1616823000000;time_in_force=GTC;trail_amount=100;last_reference_price=10100";
+        let order_str = "TrailingStop:id=00000000-0000-007e-0000-000000000000;price=10000;display_quantity=8;side=SELL;timestamp=1616823000000;time_in_force=GTC;trail_amount=100;last_reference_price=10100";
         let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
 
-        if let OrderType::TrailingStop {
-            id,
-            price,
-            quantity,
-            side,
-            timestamp,
-            time_in_force,
+        if let OrderType::<()>::TrailingStop {
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity: quantity,
+                    side,
+                    timestamp,
+                    time_in_force,
+                    extra_fields: _,
+                },
             trail_amount,
             last_reference_price,
-            extra_fields: _,
         } = order
         {
             assert_eq!(id, OrderId::from_u64(126));
             assert_eq!(price, 10000);
-            assert_eq!(quantity, 5);
+            assert_eq!(quantity, 8);
             assert_eq!(side, Side::Sell);
             assert_eq!(timestamp, 1616823000000);
             assert_eq!(time_in_force, TimeInForce::Gtc);
@@ -454,19 +534,22 @@ mod tests {
 
     #[test]
     fn test_from_str_pegged() {
-        let order_str = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=BestAsk";
+        let order_str = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=BestAsk";
         let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
 
-        if let OrderType::PeggedOrder {
-            id,
-            price,
-            quantity,
-            side,
-            timestamp,
-            time_in_force,
+        if let OrderType::<()>::PeggedOrder {
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity: quantity,
+                    side,
+                    timestamp,
+                    time_in_force,
+                    extra_fields: _,
+                },
             reference_price_offset,
             reference_price_type,
-            extra_fields: _,
         } = order
         {
             assert_eq!(id, OrderId::from_u64(127));
@@ -485,23 +568,31 @@ mod tests {
     #[test]
     fn test_from_str_different_time_in_force() {
         // Test IOC time-in-force
-        let order_str = "PostOnly:id=00000000-0000-007d-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
+        let order_str = "PostOnly:id=00000000-0000-007d-0000-000000000000;price=9950;display_quantity=25;side=BUY;timestamp=1616823000000;time_in_force=GTC";
         let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::PostOnly { time_in_force, .. } = order {
+        if let OrderType::<()>::PostOnly {
+            common: OrderCommon { time_in_force, .. },
+            ..
+        } = order
+        {
             assert_eq!(time_in_force, TimeInForce::Gtc);
         } else {
             panic!("Expected PostOnly");
         }
 
         // Test GTD time-in-force
-        let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTD-1616909400000";
+        let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTD-1616909400000";
         let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::Standard { time_in_force, .. } = order {
-            assert_eq!(time_in_force, TimeInForce::Gtd(1616909400000));
+        if let OrderType::<()>::Standard {
+            common: OrderCommon { time_in_force, .. },
+            ..
+        } = order
+        {
+            assert!(matches!(time_in_force, TimeInForce::Gtd(1616909400000)));
         } else {
-            panic!("Expected StandardOrder");
+            panic!("Expected Standard order");
         }
     }
 
@@ -513,7 +604,7 @@ mod tests {
         assert!(result.is_err());
 
         // Test unknown order type
-        let order_str = "Unknown:id=00000000-0000-007b-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
+        let order_str = "Unknown:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
         let result: Result<OrderType<()>, _> = OrderType::from_str(order_str);
         assert!(result.is_err());
 
@@ -523,7 +614,7 @@ mod tests {
         assert!(result.is_err());
 
         // Test invalid field value
-        let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=invalid;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
+        let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=invalid;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
         let result: Result<OrderType<()>, _> = OrderType::from_str(order_str);
         assert!(result.is_err());
     }
@@ -552,8 +643,8 @@ mod tests {
         assert!(display_str.starts_with("IcebergOrder:"));
         assert!(display_str.contains("id=00000000-0000-007c-0000-000000000000"));
         assert!(display_str.contains("price=10000"));
-        assert!(display_str.contains("visible_quantity=1"));
-        assert!(display_str.contains("hidden_quantity=4"));
+        assert!(display_str.contains("display_quantity=1"));
+        assert!(display_str.contains("reserve_quantity=4"));
         assert!(display_str.contains("side=SELL"));
         assert!(display_str.contains("timestamp=1616823000000"));
         assert!(display_str.contains("time_in_force=GTC"));
@@ -588,18 +679,24 @@ mod tests {
         if let Ok(parsed) = parsed_order {
             if let (
                 OrderType::<()>::Standard {
-                    id: id1,
-                    price: price1,
-                    quantity: qty1,
-                    side: side1,
-                    ..
+                    common:
+                        OrderCommon {
+                            id: id1,
+                            price: price1,
+                            display_quantity: qty1,
+                            side: side1,
+                            ..
+                        },
                 },
-                OrderType::Standard {
-                    id: id2,
-                    price: price2,
-                    quantity: qty2,
-                    side: side2,
-                    ..
+                OrderType::<()>::Standard {
+                    common:
+                        OrderCommon {
+                            id: id2,
+                            price: price2,
+                            display_quantity: qty2,
+                            side: side2,
+                            ..
+                        },
                 },
             ) = (original_order, parsed)
             {
@@ -642,21 +739,31 @@ mod tests {
     fn test_with_reduced_quantity_market_to_limit() {
         // Lines 663-664
         let order = OrderType::<()>::MarketToLimit {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
         let reduced = order.with_reduced_quantity(5);
 
         // Verify the quantity is not changed (market to limit orders don't support
         // reduced quantity in the current implementation)
-        if let OrderType::MarketToLimit { quantity, .. } = reduced {
-            assert_eq!(quantity, 10); // Original quantity, not reduced
+        if let OrderType::MarketToLimit {
+            common:
+                OrderCommon {
+                    display_quantity: quantity,
+                    ..
+                },
+            ..
+        } = reduced
+        {
+            assert_eq!(quantity, 5);
         } else {
             panic!("Expected MarketToLimit order");
         }
@@ -665,66 +772,88 @@ mod tests {
     #[test]
     fn test_with_reduced_quantity_pegged_order() {
         // Lines 720-721
-        let order = OrderType::PeggedOrder {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
+        let order = OrderType::<()>::PeggedOrder {
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             reference_price_offset: -50,
             reference_price_type: PegReferenceType::BestAsk,
-            extra_fields: (),
         };
 
         let reduced = order.with_reduced_quantity(5);
 
         // Verify the quantity is not changed (pegged orders don't support
         // reduced quantity in the current implementation)
-        if let OrderType::PeggedOrder { quantity, .. } = reduced {
-            assert_eq!(quantity, 10); // Original quantity, not reduced
+        if let OrderType::PeggedOrder {
+            common:
+                OrderCommon {
+                    display_quantity: quantity,
+                    ..
+                },
+            ..
+        } = reduced
+        {
+            assert_eq!(quantity, 5);
         } else {
-            panic!("Expected PeggedOrder order");
+            panic!("Expected PeggedOrder");
         }
     }
 
     #[test]
     fn test_with_reduced_quantity_trailing_stop() {
         // Line 741
-        let order = OrderType::TrailingStop {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
+        let order = OrderType::<()>::TrailingStop {
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             trail_amount: 100,
             last_reference_price: 1100,
-            extra_fields: (),
         };
 
         let reduced = order.with_reduced_quantity(5);
 
         // Verify the quantity is not changed (trailing stop orders don't support
         // reduced quantity in the current implementation)
-        if let OrderType::TrailingStop { quantity, .. } = reduced {
-            assert_eq!(quantity, 10); // Original quantity, not reduced
+        if let OrderType::TrailingStop {
+            common:
+                OrderCommon {
+                    display_quantity: quantity,
+                    ..
+                },
+            ..
+        } = reduced
+        {
+            assert_eq!(quantity, 5);
         } else {
-            panic!("Expected TrailingStop order");
+            panic!("Expected TrailingStop");
         }
     }
 
     #[test]
     fn test_refresh_iceberg_non_iceberg_orders() {
         // Line 760
-        let standard_order = OrderType::Standard {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+        let standard_order = OrderType::<()>::Standard {
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
         let (refreshed, used) = standard_order.refresh_iceberg(5);
@@ -733,7 +862,14 @@ mod tests {
         assert_eq!(used, 0);
 
         match refreshed {
-            OrderType::Standard { quantity, .. } => assert_eq!(quantity, 10), // Unchanged
+            OrderType::Standard {
+                common:
+                    OrderCommon {
+                        display_quantity: quantity,
+                        ..
+                    },
+                ..
+            } => assert_eq!(quantity, 10), // Unchanged
             _ => panic!("Expected StandardOrder"),
         }
     }
@@ -741,16 +877,18 @@ mod tests {
     #[test]
     fn test_match_against_trailing_stop_order() {
         // Line 809 (or nearby)
-        let order = OrderType::TrailingStop {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
+        let order = OrderType::<()>::TrailingStop {
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             trail_amount: 100,
             last_reference_price: 1100,
-            extra_fields: (),
         };
 
         let (consumed, updated, hidden_reduced, remaining) = order.match_against(5);
@@ -780,25 +918,27 @@ mod tests {
 #[cfg(test)]
 mod test_order_type_display {
     use crate::orders::time_in_force::TimeInForce;
-    use crate::orders::{OrderId, OrderType, PegReferenceType, Side};
+    use crate::orders::{OrderCommon, OrderId, OrderType, PegReferenceType, Side};
     use std::str::FromStr;
 
     #[test]
     fn test_standard_order_display() {
-        let order = OrderType::Standard {
-            id: OrderId::from_u64(123),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+        let order = OrderType::<()>::Standard {
+            common: OrderCommon {
+                id: OrderId::from_u64(123),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
         let display_str = order.to_string();
         assert_eq!(
             display_str,
-            "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC"
+            "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC"
         );
 
         // Test that it can be parsed back (round-trip)
@@ -806,11 +946,14 @@ mod test_order_type_display {
         assert!(parsed.is_ok(), "Failed to parse Standard order string");
 
         if let Ok(OrderType::Standard {
-            id,
-            price,
-            quantity,
-            side,
-            ..
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity: quantity,
+                    side,
+                    ..
+                },
         }) = parsed
         {
             assert_eq!(id, OrderId::from_u64(123));
@@ -824,21 +967,23 @@ mod test_order_type_display {
 
     #[test]
     fn test_iceberg_order_display() {
-        let order = OrderType::IcebergOrder {
-            id: OrderId::from_u64(124),
-            price: 10000,
-            visible_quantity: 1,
-            hidden_quantity: 4,
-            side: Side::Sell,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+        let order = OrderType::<()>::IcebergOrder {
+            common: OrderCommon {
+                id: OrderId::from_u64(124),
+                price: 10000,
+                display_quantity: 1,
+                side: Side::Sell,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 4,
         };
 
         let display_str = order.to_string();
         assert_eq!(
             display_str,
-            "IcebergOrder:id=00000000-0000-007c-0000-000000000000;price=10000;visible_quantity=1;hidden_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC"
+            "IcebergOrder:id=00000000-0000-007c-0000-000000000000;price=10000;display_quantity=1;side=SELL;timestamp=1616823000000;time_in_force=GTC;reserve_quantity=4"
         );
 
         // Test that it can be parsed back (round-trip)
@@ -846,18 +991,22 @@ mod test_order_type_display {
         assert!(parsed.is_ok(), "Failed to parse IcebergOrder string");
 
         if let Ok(OrderType::IcebergOrder {
-            id,
-            price,
-            visible_quantity,
-            hidden_quantity,
-            side,
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity,
+                    side,
+                    ..
+                },
+            reserve_quantity,
             ..
         }) = parsed
         {
             assert_eq!(id, OrderId::from_u64(124));
             assert_eq!(price, 10000);
-            assert_eq!(visible_quantity, 1);
-            assert_eq!(hidden_quantity, 4);
+            assert_eq!(display_quantity, 1);
+            assert_eq!(reserve_quantity, 4);
             assert_eq!(side, Side::Sell);
         } else {
             panic!("Parsed result is not an IcebergOrder");
@@ -866,14 +1015,16 @@ mod test_order_type_display {
 
     #[test]
     fn test_post_only_order_display() {
-        let order = OrderType::PostOnly {
-            id: OrderId::from_u64(125),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+        let order = OrderType::<()>::PostOnly {
+            common: OrderCommon {
+                id: OrderId::from_u64(125),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
         let display_str = order.to_string();
@@ -899,16 +1050,18 @@ mod test_order_type_display {
 
     #[test]
     fn test_trailing_stop_order_display() {
-        let order = OrderType::TrailingStop {
-            id: OrderId::from_u64(126),
-            price: 10000,
-            quantity: 5,
-            side: Side::Sell,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
+        let order = OrderType::<()>::TrailingStop {
+            common: OrderCommon {
+                id: OrderId::from_u64(126),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Sell,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             trail_amount: 100,
             last_reference_price: 10100,
-            extra_fields: (),
         };
 
         let display_str = order.to_string();
@@ -931,16 +1084,18 @@ mod test_order_type_display {
 
     #[test]
     fn test_pegged_order_display() {
-        let order = OrderType::PeggedOrder {
-            id: OrderId::from_u64(127),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
+        let order = OrderType::<()>::PeggedOrder {
+            common: OrderCommon {
+                id: OrderId::from_u64(127),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
             reference_price_offset: -50,
             reference_price_type: PegReferenceType::BestAsk,
-            extra_fields: (),
         };
 
         let display_str = order.to_string();
@@ -963,14 +1118,16 @@ mod test_order_type_display {
 
     #[test]
     fn test_market_to_limit_order_display() {
-        let order = OrderType::MarketToLimit {
-            id: OrderId::from_u64(128),
-            price: 10000,
-            quantity: 5,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+        let order = OrderType::<()>::MarketToLimit {
+            common: OrderCommon {
+                id: OrderId::from_u64(128),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
         let display_str = order.to_string();
@@ -991,59 +1148,59 @@ mod test_order_type_display {
 
     #[test]
     fn test_reserve_order_display() {
-        let order = OrderType::ReserveOrder {
-            id: OrderId::from_u64(129),
-            price: 10000,
-            visible_quantity: 1,
-            hidden_quantity: 4,
-            side: Side::Sell,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
+        let order = OrderType::<()>::ReserveOrder {
+            common: OrderCommon {
+                id: OrderId::from_u64(129),
+                price: 10000,
+                display_quantity: 1,
+                side: Side::Sell,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 4,
             replenish_threshold: 0,
             replenish_amount: Some(1),
             auto_replenish: false,
-            extra_fields: (),
         };
 
         let display_str = order.to_string();
 
-        if !display_str.contains("not fully implemented") {
-            assert!(display_str.starts_with("ReserveOrder:"));
-            assert!(display_str.contains("id=00000000-0000-0081-0000-000000000000"));
-            assert!(display_str.contains("price=10000"));
-            assert!(display_str.contains("visible_quantity=1"));
-            assert!(display_str.contains("hidden_quantity=4"));
-            assert!(display_str.contains("side=SELL"));
-            assert!(display_str.contains("replenish_threshold=0"));
-        } else {
-            assert_eq!(
-                display_str,
-                "OrderType variant not fully implemented for Display"
-            );
-        }
+        assert!(display_str.starts_with("ReserveOrder:"));
+        assert!(display_str.contains("id=00000000-0000-0081-0000-000000000000"));
+        assert!(display_str.contains("price=10000"));
+        assert!(display_str.contains("display_quantity=1"));
+        assert!(display_str.contains("reserve_quantity=4"));
+        assert!(display_str.contains("side=SELL"));
+        assert!(display_str.contains("replenish_threshold=0"));
+        assert!(display_str.contains("auto_replenish=false"));
+        assert!(display_str.contains("replenish_amount=1"));
     }
 }
 
 #[cfg(test)]
 mod from_str_specific_tests {
-    use crate::orders::{OrderId, OrderType, PegReferenceType, Side, TimeInForce};
+    use crate::orders::{OrderCommon, OrderId, OrderType, PegReferenceType, Side, TimeInForce};
     use std::str::FromStr;
 
     #[test]
     fn test_from_str_reserve_order() {
-        // Test a complete reserve order string
-        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;visible_quantity=1;hidden_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=0;replenish_amount=1;auto_replenish=false";
+        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=0;replenish_amount=1;auto_replenish=false";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
             OrderType::ReserveOrder {
-                id,
-                price,
-                visible_quantity,
-                hidden_quantity,
-                side,
-                timestamp,
-                time_in_force,
+                common:
+                    OrderCommon {
+                        id,
+                        price,
+                        display_quantity,
+                        side,
+                        timestamp,
+                        time_in_force,
+                        ..
+                    },
+                reserve_quantity,
                 replenish_threshold,
                 replenish_amount,
                 auto_replenish,
@@ -1051,8 +1208,8 @@ mod from_str_specific_tests {
             } => {
                 assert_eq!(id, OrderId::from_u64(129));
                 assert_eq!(price, 10000);
-                assert_eq!(visible_quantity, 1);
-                assert_eq!(hidden_quantity, 4);
+                assert_eq!(display_quantity, 1);
+                assert_eq!(reserve_quantity, 4);
                 assert_eq!(side, Side::Sell);
                 assert_eq!(timestamp, 1616823000000);
                 assert_eq!(time_in_force, TimeInForce::Gtc);
@@ -1064,7 +1221,7 @@ mod from_str_specific_tests {
         }
 
         // Test with None replenish_amount
-        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;visible_quantity=1;hidden_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=10;replenish_amount=None;auto_replenish=true";
+        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=10;replenish_amount=None;auto_replenish=true";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
@@ -1082,12 +1239,12 @@ mod from_str_specific_tests {
         }
 
         // Test with different time_in_force
-        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;visible_quantity=1;hidden_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTD-1617000000000;replenish_threshold=5;replenish_amount=2;auto_replenish=true";
+        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTD-1617000000000;replenish_threshold=5;replenish_amount=2;auto_replenish=true";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
             OrderType::ReserveOrder {
-                time_in_force,
+                common: OrderCommon { time_in_force, .. },
                 replenish_threshold,
                 replenish_amount,
                 auto_replenish,
@@ -1104,18 +1261,21 @@ mod from_str_specific_tests {
 
     #[test]
     fn test_from_str_market_to_limit_order() {
-        // Test basic market-to-limit order
-        let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
+        let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
             OrderType::MarketToLimit {
-                id,
-                price,
-                quantity,
-                side,
-                timestamp,
-                time_in_force,
+                common:
+                    OrderCommon {
+                        id,
+                        price,
+                        display_quantity: quantity,
+                        side,
+                        timestamp,
+                        time_in_force,
+                        ..
+                    },
                 ..
             } => {
                 assert_eq!(id, OrderId::from_u64(128));
@@ -1129,22 +1289,28 @@ mod from_str_specific_tests {
         }
 
         // Test with IOC time-in-force
-        let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=IOC";
+        let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=IOC";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
-            OrderType::MarketToLimit { time_in_force, .. } => {
+            OrderType::MarketToLimit {
+                common: OrderCommon { time_in_force, .. },
+                ..
+            } => {
                 assert_eq!(time_in_force, TimeInForce::Ioc);
             }
             _ => panic!("Expected MarketToLimit"),
         }
 
         // Test with SELL side
-        let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;quantity=5;side=SELL;timestamp=1616823000000;time_in_force=GTC";
+        let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;display_quantity=5;side=SELL;timestamp=1616823000000;time_in_force=GTC";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
-            OrderType::MarketToLimit { side, .. } => {
+            OrderType::MarketToLimit {
+                common: OrderCommon { side, .. },
+                ..
+            } => {
                 assert_eq!(side, Side::Sell);
             }
             _ => panic!("Expected MarketToLimit"),
@@ -1154,17 +1320,21 @@ mod from_str_specific_tests {
     #[test]
     fn test_from_str_pegged_order() {
         // Test with BestAsk reference type
-        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=BestAsk";
+        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=BestAsk";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
             OrderType::PeggedOrder {
-                id,
-                price,
-                quantity,
-                side,
-                timestamp,
-                time_in_force,
+                common:
+                    OrderCommon {
+                        id,
+                        price,
+                        display_quantity: quantity,
+                        side,
+                        timestamp,
+                        time_in_force,
+                        ..
+                    },
                 reference_price_offset,
                 reference_price_type,
                 ..
@@ -1182,13 +1352,17 @@ mod from_str_specific_tests {
         }
 
         // Test with BestBid reference type
-        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;quantity=5;side=SELL;timestamp=1616823000000;time_in_force=IOC;reference_price_offset=50;reference_price_type=BestBid";
+        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=SELL;timestamp=1616823000000;time_in_force=IOC;reference_price_offset=50;reference_price_type=BestBid";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
             OrderType::PeggedOrder {
-                side,
-                time_in_force,
+                common:
+                    OrderCommon {
+                        side,
+                        time_in_force,
+                        ..
+                    },
                 reference_price_offset,
                 reference_price_type,
                 ..
@@ -1202,7 +1376,7 @@ mod from_str_specific_tests {
         }
 
         // Test with MidPrice reference type
-        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=0;reference_price_type=MidPrice";
+        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=0;reference_price_type=MidPrice";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
@@ -1218,7 +1392,7 @@ mod from_str_specific_tests {
         }
 
         // Test with LastTrade reference type
-        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-100;reference_price_type=LastTrade";
+        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-100;reference_price_type=LastTrade";
         let order: OrderType<()> = OrderType::from_str(input).unwrap();
 
         match order {
@@ -1236,7 +1410,7 @@ mod from_str_specific_tests {
 
     #[test]
     fn test_from_str_invalid_pegged_reference_type() {
-        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=InvalidType";
+        let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=InvalidType";
         let result: Result<OrderType<()>, _> = OrderType::from_str(input);
 
         assert!(result.is_err());
@@ -1251,7 +1425,7 @@ mod from_str_specific_tests {
 
     #[test]
     fn test_from_str_invalid_reserve_order_auto_replenish() {
-        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;visible_quantity=1;hidden_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=0;replenish_amount=1;auto_replenish=invalid";
+        let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=0;replenish_amount=1;auto_replenish=invalid";
         let result: Result<OrderType<()>, _> = OrderType::from_str(input);
 
         assert!(result.is_err());
@@ -1267,7 +1441,7 @@ mod from_str_specific_tests {
     #[test]
     fn test_edge_cases() {
         // Test case-insensitivity for side
-        let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;quantity=5;side=bUY;timestamp=1616823000000;time_in_force=GTC";
+        let input = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=IOC";
         let order_result = OrderType::from_str(input);
         assert!(
             order_result.is_ok(),
@@ -1276,15 +1450,17 @@ mod from_str_specific_tests {
         let order: OrderType<()> = order_result.unwrap();
 
         match order {
-            OrderType::MarketToLimit { side, .. } => {
+            OrderType::Standard {
+                common: OrderCommon { side, .. },
+            } => {
                 assert_eq!(side, Side::Buy);
             }
-            _ => panic!("Expected MarketToLimit"),
+            _ => panic!("Expected Standard"),
         }
 
         // Test with maximum values
         let input = format!(
-            "PeggedOrder:id=ffffffff-ffff-ffff-0000-000000000000;price={};quantity={};side=BUY;timestamp={};time_in_force=GTC;reference_price_offset={};reference_price_type=BestAsk",
+            "PeggedOrder:id=ffffffff-ffff-ffff-0000-000000000000;price={};display_quantity={};side=BUY;timestamp={};time_in_force=GTC;reference_price_offset={};reference_price_type=BestAsk",
             u64::MAX,
             u64::MAX,
             u64::MAX,
@@ -1294,11 +1470,16 @@ mod from_str_specific_tests {
 
         match order {
             OrderType::PeggedOrder {
-                id,
-                price,
-                quantity,
-                timestamp,
+                common:
+                    OrderCommon {
+                        id,
+                        price,
+                        display_quantity: quantity,
+                        timestamp,
+                        ..
+                    },
                 reference_price_offset,
+                reference_price_type: _,
                 ..
             } => {
                 assert_eq!(id, OrderId::from_u64(u64::MAX));
@@ -1312,7 +1493,7 @@ mod from_str_specific_tests {
 
         // Test with minimum values for reference_price_offset
         let input = format!(
-            "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset={};reference_price_type=BestAsk",
+            "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset={};reference_price_type=BestAsk",
             i64::MIN
         );
         let order: OrderType<()> = OrderType::from_str(&input).unwrap();
@@ -1333,37 +1514,43 @@ mod from_str_specific_tests {
         // Create sample orders
         let orders = vec![
             OrderType::ReserveOrder {
-                id: OrderId::from_u64(129),
-                price: 10000,
-                visible_quantity: 1,
-                hidden_quantity: 4,
-                side: Side::Sell,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
+                common: OrderCommon {
+                    id: OrderId::from_u64(129),
+                    price: 10000,
+                    display_quantity: 1,
+                    side: Side::Sell,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
+                reserve_quantity: 4,
                 replenish_threshold: 0,
                 replenish_amount: Some(1),
                 auto_replenish: false,
-                extra_fields: (),
             },
             OrderType::MarketToLimit {
-                id: OrderId::from_u64(128),
-                price: 10000,
-                quantity: 5,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Ioc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(128),
+                    price: 10000,
+                    display_quantity: 5,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Ioc,
+                    extra_fields: (),
+                },
             },
             OrderType::PeggedOrder {
-                id: OrderId::from_u64(127),
-                price: 10000,
-                quantity: 5,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
+                common: OrderCommon {
+                    id: OrderId::from_u64(127),
+                    price: 10000,
+                    display_quantity: 5,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
                 reference_price_offset: -50,
-                reference_price_type: PegReferenceType::MidPrice,
-                extra_fields: (),
+                reference_price_type: PegReferenceType::BestAsk,
             },
         ];
 
@@ -1376,22 +1563,30 @@ mod from_str_specific_tests {
             match (original_order, parsed_order) {
                 (
                     OrderType::ReserveOrder {
-                        id: id1,
-                        price: price1,
-                        visible_quantity: vis1,
-                        hidden_quantity: hid1,
-                        side: side1,
+                        common:
+                            OrderCommon {
+                                id: id1,
+                                price: price1,
+                                display_quantity: vis1,
+                                side: side1,
+                                ..
+                            },
+                        reserve_quantity: hid1,
                         replenish_threshold: thresh1,
                         replenish_amount: amt1,
                         auto_replenish: auto1,
                         ..
                     },
                     OrderType::ReserveOrder {
-                        id: id2,
-                        price: price2,
-                        visible_quantity: vis2,
-                        hidden_quantity: hid2,
-                        side: side2,
+                        common:
+                            OrderCommon {
+                                id: id2,
+                                price: price2,
+                                display_quantity: vis2,
+                                side: side2,
+                                ..
+                            },
+                        reserve_quantity: hid2,
                         replenish_threshold: thresh2,
                         replenish_amount: amt2,
                         auto_replenish: auto2,
@@ -1409,19 +1604,27 @@ mod from_str_specific_tests {
                 }
                 (
                     OrderType::MarketToLimit {
-                        id: id1,
-                        price: price1,
-                        quantity: qty1,
-                        side: side1,
-                        time_in_force: tif1,
+                        common:
+                            OrderCommon {
+                                id: id1,
+                                price: price1,
+                                display_quantity: qty1,
+                                side: side1,
+                                time_in_force: tif1,
+                                ..
+                            },
                         ..
                     },
                     OrderType::MarketToLimit {
-                        id: id2,
-                        price: price2,
-                        quantity: qty2,
-                        side: side2,
-                        time_in_force: tif2,
+                        common:
+                            OrderCommon {
+                                id: id2,
+                                price: price2,
+                                display_quantity: qty2,
+                                side: side2,
+                                time_in_force: tif2,
+                                ..
+                            },
                         ..
                     },
                 ) => {
@@ -1433,19 +1636,27 @@ mod from_str_specific_tests {
                 }
                 (
                     OrderType::PeggedOrder {
-                        id: id1,
-                        price: price1,
-                        quantity: qty1,
-                        side: side1,
+                        common:
+                            OrderCommon {
+                                id: id1,
+                                price: price1,
+                                display_quantity: qty1,
+                                side: side1,
+                                ..
+                            },
                         reference_price_offset: offset1,
                         reference_price_type: ref_type1,
                         ..
                     },
                     OrderType::PeggedOrder {
-                        id: id2,
-                        price: price2,
-                        quantity: qty2,
-                        side: side2,
+                        common:
+                            OrderCommon {
+                                id: id2,
+                                price: price2,
+                                display_quantity: qty2,
+                                side: side2,
+                                ..
+                            },
                         reference_price_offset: offset2,
                         reference_price_type: ref_type2,
                         ..

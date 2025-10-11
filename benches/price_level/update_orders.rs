@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce};
+use pricelevel::{OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce};
 use std::hint::black_box;
 
 /// Register all benchmarks for updating orders at a price level
@@ -108,13 +108,15 @@ fn setup_standard_orders(order_count: u64) -> PriceLevel {
 
     for i in 0..order_count {
         let order = OrderType::Standard {
-            id: OrderId::from_u64(i),
-            price: 10000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000 + i,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(i),
+                price: 10000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000 + i,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         price_level.add_order(order);
     }
@@ -128,14 +130,16 @@ fn setup_iceberg_orders(order_count: u64) -> PriceLevel {
 
     for i in 0..order_count {
         let order = OrderType::IcebergOrder {
-            id: OrderId::from_u64(i),
-            price: 10000,
-            visible_quantity: 5,
-            hidden_quantity: 15,
-            side: Side::Buy,
-            timestamp: 1616823000000 + i,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(i),
+                price: 10000,
+                display_quantity: 5,
+                side: Side::Buy,
+                timestamp: 1616823000000 + i,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 15,
         };
         price_level.add_order(order);
     }

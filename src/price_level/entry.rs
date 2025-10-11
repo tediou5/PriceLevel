@@ -29,7 +29,7 @@ impl OrderBookEntry {
 
     /// Get the visible quantity at this entry
     pub fn visible_quantity(&self) -> u64 {
-        self.level.visible_quantity()
+        self.level.display_quantity()
     }
 
     /// Get the total quantity at this entry

@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::orders::{OrderCommon, OrderId, OrderType, Side, TimeInForce};
     use crate::price_level::entry::OrderBookEntry;
     use crate::price_level::level::PriceLevel;
-    use crate::{OrderId, OrderType, Side, TimeInForce};
     use std::str::FromStr;
     use std::sync::Arc;
     use tracing::info;
@@ -124,13 +124,15 @@ mod tests {
 
         // Add an order to make the test more meaningful
         let order = OrderType::Standard {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         level.add_order(order);
 
@@ -213,30 +215,35 @@ mod tests_order_book_entry {
 
         // Add some orders and check again
         let order_type = crate::orders::OrderType::Standard {
-            id: crate::orders::OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: crate::orders::Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: crate::orders::TimeInForce::Gtc,
-            extra_fields: (),
+            common: crate::orders::OrderCommon {
+                id: crate::orders::OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: crate::orders::Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: crate::orders::TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
         level1.add_order(order_type);
         assert_eq!(entry1.order_count(), 1);
 
         // Add another order
-        let order_type2 = crate::orders::OrderType::Standard {
-            id: crate::orders::OrderId::from_u64(2),
-            price: 1000,
-            quantity: 20,
-            side: crate::orders::Side::Buy,
-            timestamp: 1616823000001,
-            time_in_force: crate::orders::TimeInForce::Gtc,
-            extra_fields: (),
+        // Add one more order with different ID
+        let order_type3 = crate::orders::OrderType::Standard {
+            common: crate::orders::OrderCommon {
+                id: crate::orders::OrderId::from_u64(3),
+                price: 1000,
+                display_quantity: 20,
+                side: crate::orders::Side::Buy,
+                timestamp: 1616823000002,
+                time_in_force: crate::orders::TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
-        level1.add_order(order_type2);
+        level1.add_order(order_type3);
         assert_eq!(entry1.order_count(), 2);
     }
 
@@ -358,13 +365,15 @@ mod tests_order_book_entry {
 
         // Add an order with visible quantity
         let standard_order = crate::orders::OrderType::Standard {
-            id: crate::orders::OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: crate::orders::Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: crate::orders::TimeInForce::Gtc,
-            extra_fields: (),
+            common: crate::orders::OrderCommon {
+                id: crate::orders::OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: crate::orders::Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: crate::orders::TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         level.add_order(standard_order);
 
@@ -374,14 +383,16 @@ mod tests_order_book_entry {
 
         // Add an iceberg order with hidden quantity
         let iceberg_order = crate::orders::OrderType::IcebergOrder {
-            id: crate::orders::OrderId::from_u64(2),
-            price: 1000,
-            visible_quantity: 5,
-            hidden_quantity: 15,
-            side: crate::orders::Side::Buy,
-            timestamp: 1616823000001,
-            time_in_force: crate::orders::TimeInForce::Gtc,
-            extra_fields: (),
+            common: crate::orders::OrderCommon {
+                id: crate::orders::OrderId::from_u64(2),
+                price: 1000,
+                display_quantity: 5,
+                side: crate::orders::Side::Buy,
+                timestamp: 1616823000001,
+                time_in_force: crate::orders::TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 15,
         };
         level.add_order(iceberg_order);
 
@@ -505,7 +516,7 @@ mod tests_order_book_entry_deserialize {
     fn test_deserialize_from_complete_json() {
         // More complete JSON with nested structure similar to what might be used in practice
         let json = r#"{
-            "price": 1000, 
+            "price": 1000,
             "index": 5,
             "level_data": {
                 "visible_quantity": 10,

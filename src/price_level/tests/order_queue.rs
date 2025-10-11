@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::orders::{OrderId, OrderType, Side, TimeInForce};
+    use crate::orders::{OrderCommon, OrderId, OrderType, Side, TimeInForce};
     use crate::price_level::order_queue::OrderQueue;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -8,13 +8,15 @@ mod tests {
 
     fn create_test_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
         OrderType::<()>::Standard {
-            id: OrderId::from_u64(id),
-            price,
-            quantity,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(id),
+                price,
+                display_quantity: quantity,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         }
     }
 
@@ -52,7 +54,7 @@ mod tests {
         assert!(display_string.contains("price=1100"));
 
         // Example input string format (manually constructed to match expected format)
-        let input = "OrderQueue:orders=[Standard:id=00000000-0000-0001-0000-000000000000;price=1000;quantity=10;side=BUY;timestamp=1616823000000;time_in_force=GTC,Standard:id=00000000-0000-0002-0000-000000000000;price=1100;quantity=20;side=BUY;timestamp=1616823000000;time_in_force=GTC]";
+        let input = "OrderQueue:orders=[Standard:id=00000000-0000-0001-0000-000000000000;price=1000;display_quantity=10;side=BUY;timestamp=1616823000000;time_in_force=GTC,Standard:id=00000000-0000-0002-0000-000000000000;price=1100;display_quantity=20;side=BUY;timestamp=1616823000000;time_in_force=GTC]";
 
         // Try parsing
         let parsed_queue = match OrderQueue::from_str(input) {
@@ -73,10 +75,10 @@ mod tests {
 
         // Verify individual orders (order might not be preserved)
         let has_order1 = orders.iter().any(|o| {
-            o.id() == OrderId::from_u64(1) && o.price() == 1000 && o.visible_quantity() == 10
+            o.id() == OrderId::from_u64(1) && o.price() == 1000 && o.display_quantity() == 10
         });
         let has_order2 = orders.iter().any(|o| {
-            o.id() == OrderId::from_u64(2) && o.price() == 1100 && o.visible_quantity() == 20
+            o.id() == OrderId::from_u64(2) && o.price() == 1100 && o.display_quantity() == 20
         });
 
         assert!(has_order1, "First order not found or incorrect");
@@ -93,10 +95,10 @@ mod tests {
         );
 
         let round_trip_has_order1 = round_trip_orders.iter().any(|o| {
-            o.id() == OrderId::from_u64(1) && o.price() == 1000 && o.visible_quantity() == 10
+            o.id() == OrderId::from_u64(1) && o.price() == 1000 && o.display_quantity() == 10
         });
         let round_trip_has_order2 = round_trip_orders.iter().any(|o| {
-            o.id() == OrderId::from_u64(2) && o.price() == 1100 && o.visible_quantity() == 20
+            o.id() == OrderId::from_u64(2) && o.price() == 1100 && o.display_quantity() == 20
         });
 
         assert!(
@@ -182,7 +184,7 @@ mod tests {
     #[test]
     fn test_order_queue_from_str_complex() {
         // Test with a complex order string format
-        let complex_order = "Standard:id=00000000-0000-0001-0000-000000000000;price=10000;quantity=100;side=BUY;timestamp=1616823000000;time_in_force=GTD-1617000000000";
+        let complex_order = "Standard:id=00000000-0000-0001-0000-000000000000;price=10000;display_quantity=100;side=BUY;timestamp=1616823000000;time_in_force=GTD-1617000000000";
 
         let input = format!("OrderQueue:orders=[{complex_order}]");
         let queue = OrderQueue::from_str(&input).unwrap();
@@ -193,11 +195,14 @@ mod tests {
         let order = &queue.to_vec()[0];
 
         if let OrderType::<()>::Standard {
-            id,
-            price,
-            quantity,
-            time_in_force,
-            ..
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity: quantity,
+                    time_in_force,
+                    ..
+                },
         } = **order
         {
             assert_eq!(id, OrderId::from_u64(1));
@@ -222,13 +227,15 @@ mod tests {
     fn test_order_queue_serialization() {
         fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
             OrderType::Standard {
-                id: OrderId::from_u64(id),
-                price,
-                quantity,
-                side: Side::Buy,
-                timestamp: 1616823000000,
-                time_in_force: TimeInForce::Gtc,
-                extra_fields: (),
+                common: OrderCommon {
+                    id: OrderId::from_u64(id),
+                    price,
+                    display_quantity: quantity,
+                    side: Side::Buy,
+                    timestamp: 1616823000000,
+                    time_in_force: TimeInForce::Gtc,
+                    extra_fields: (),
+                },
             }
         }
         let queue = OrderQueue::new();
@@ -244,7 +251,7 @@ mod tests {
         assert!(serialized.contains("\"Standard\""));
         assert!(serialized.contains("\"id\":\"00000000-0000-0001-0000-000000000000\""));
         assert!(serialized.contains("\"price\":10000"));
-        assert!(serialized.contains("\"quantity\":100"));
+        assert!(serialized.contains("\"display_quantity\":100"));
 
         // Deserialize and verify
         let deserialized: OrderQueue = serde_json::from_str(&serialized).unwrap();
@@ -253,10 +260,13 @@ mod tests {
         let deserialized_order = &deserialized.to_vec()[0];
 
         if let OrderType::Standard {
-            id,
-            price,
-            quantity,
-            ..
+            common:
+                OrderCommon {
+                    id,
+                    price,
+                    display_quantity: quantity,
+                    ..
+                },
         } = **deserialized_order
         {
             assert_eq!(id, OrderId::from_u64(1));
@@ -277,13 +287,15 @@ mod tests {
 
         // Add an order and check again
         let order = OrderType::Standard {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
         queue.push(Arc::new(order));
 
@@ -295,7 +307,18 @@ mod tests {
         assert!(queue.is_empty());
 
         // Push the order back and then try a different approach to check emptiness
-        queue.push(Arc::new(order));
+        let order2 = OrderType::Standard {
+            common: OrderCommon {
+                id: OrderId::from_u64(2),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+        };
+        queue.push(Arc::new(order2));
         assert!(!queue.is_empty());
     }
 
@@ -304,23 +327,27 @@ mod tests {
         // Test lines 170, 178
         // Create a vector of orders
         let order1 = Arc::new(OrderType::Standard {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         });
 
         let order2 = Arc::new(OrderType::Standard {
-            id: OrderId::from_u64(2),
-            price: 1000,
-            quantity: 20,
-            side: Side::Buy,
-            timestamp: 1616823000001,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(2),
+                price: 1000,
+                display_quantity: 20,
+                side: Side::Buy,
+                timestamp: 1616823000001,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         });
 
         let orders = vec![order1.clone(), order2.clone()];
@@ -349,7 +376,7 @@ mod tests {
         // Test lines 196-198, 200-202, 241, 266-267
 
         // Create a complex string with nested delimiters
-        let complex_input = "OrderQueue:orders=[Standard:id=00000000-0000-0001-0000-000000000000;price=1000;quantity=10;side=BUY;timestamp=1616823000000;time_in_force=GTC,IcebergOrder:id=00000000-0000-0002-0000-000000000000;price=1000;visible_quantity=5;hidden_quantity=15;side=SELL;timestamp=1616823000001;time_in_force=GTC]";
+        let complex_input = "OrderQueue:orders=[Standard:id=00000000-0000-0001-0000-000000000000;price=1000;display_quantity=10;side=BUY;timestamp=1616823000000;time_in_force=GTC,IcebergOrder:id=00000000-0000-0002-0000-000000000000;price=1000;display_quantity=5;reserve_quantity=15;side=SELL;timestamp=1616823000001;time_in_force=GTC]";
 
         // Parse the complex input
         let result = OrderQueue::from_str(complex_input);
@@ -392,24 +419,28 @@ mod tests {
         let queue = OrderQueue::new();
 
         let order1 = OrderType::Standard {
-            id: OrderId::from_u64(1),
-            price: 1000,
-            quantity: 10,
-            side: Side::Buy,
-            timestamp: 1616823000000,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(1),
+                price: 1000,
+                display_quantity: 10,
+                side: Side::Buy,
+                timestamp: 1616823000000,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
         };
 
         let order2 = OrderType::IcebergOrder {
-            id: OrderId::from_u64(2),
-            price: 1000,
-            visible_quantity: 5,
-            hidden_quantity: 15,
-            side: Side::Sell,
-            timestamp: 1616823000001,
-            time_in_force: TimeInForce::Gtc,
-            extra_fields: (),
+            common: OrderCommon {
+                id: OrderId::from_u64(2),
+                price: 1000,
+                display_quantity: 5,
+                side: Side::Sell,
+                timestamp: 1616823000001,
+                time_in_force: TimeInForce::Gtc,
+                extra_fields: (),
+            },
+            reserve_quantity: 15,
         };
 
         queue.push(Arc::new(order1));
