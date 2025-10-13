@@ -135,17 +135,16 @@
 //! The performance characteristics demonstrate that the `pricelevel` library is suitable for production use in high-performance trading systems, matching engines, and other financial applications where microsecond-level performance is critical.
 //!
 
-mod orders;
+mod errors;
+mod execution;
+mod order;
 mod price_level;
 mod utils;
 
-mod errors;
-mod execution;
-
 pub use errors::PriceLevelError;
 pub use execution::{MatchResult, Transaction};
-pub use orders::DEFAULT_RESERVE_REPLENISH_AMOUNT;
-pub use orders::PegReferenceType;
-pub use orders::{OrderCommon, OrderId, OrderType, OrderUpdate, Side, TimeInForce};
+pub use order::DEFAULT_RESERVE_REPLENISH_AMOUNT;
+pub use order::PegReferenceType;
+pub use order::{OrderCommon, OrderId, OrderType, OrderUpdate, Side, TimeInForce};
 pub use price_level::{OrderQueue, PriceLevel, PriceLevelData, PriceLevelSnapshot};
 pub use utils::{UuidGenerator, setup_logger};
