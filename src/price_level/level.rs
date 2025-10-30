@@ -3,7 +3,7 @@
 use crate::UuidGenerator;
 use crate::errors::PriceLevelError;
 use crate::execution::{MatchResult, Transaction};
-use crate::order::{OrderId, OrderType, OrderUpdate};
+use crate::order::{OrderId, Order, OrderUpdate};
 use crate::price_level::order_queue::OrderQueue;
 use crate::price_level::{PriceLevelSnapshot, PriceLevelSnapshotPackage, PriceLevelStatistics};
 use serde::{Deserialize, Serialize};
@@ -112,7 +112,7 @@ impl PriceLevel {
     }
 
     /// Add an order to this price level
-    pub fn add_order(&self, order: OrderType<()>) -> Arc<OrderType<()>> {
+    pub fn add_order(&self, order: Order<()>) -> Arc<Order<()>> {
         // Calculate quantities
         let visible_qty = order.display_quantity();
         let hidden_qty = order.reserve_quantity();
@@ -135,7 +135,7 @@ impl PriceLevel {
     }
 
     /// Creates an iterator over the orders in the price level.
-    pub fn iter_orders(&self) -> Vec<Arc<OrderType<()>>> {
+    pub fn iter_orders(&self) -> Vec<Arc<Order<()>>> {
         self.orders.to_vec()
     }
 
@@ -215,7 +215,7 @@ impl PriceLevel {
                 } else {
                     self.order_count.fetch_sub(1, Ordering::AcqRel);
                     match &*order_arc {
-                        OrderType::IcebergOrder {
+                        Order::IcebergOrder {
                             reserve_quantity, ..
                         } => {
                             if *reserve_quantity > 0 && hidden_reduced == 0 {
@@ -223,7 +223,7 @@ impl PriceLevel {
                                     .fetch_sub(*reserve_quantity, Ordering::AcqRel);
                             }
                         }
-                        OrderType::ReserveOrder {
+                        Order::ReserveOrder {
                             reserve_quantity, ..
                         } => {
                             if *reserve_quantity > 0 && hidden_reduced == 0 {
@@ -276,7 +276,7 @@ impl PriceLevel {
     pub fn update_order(
         &self,
         update: OrderUpdate,
-    ) -> Result<Option<Arc<OrderType<()>>>, PriceLevelError> {
+    ) -> Result<Option<Arc<Order<()>>>, PriceLevelError> {
         match update {
             OrderUpdate::UpdatePrice {
                 order_id,
@@ -472,7 +472,7 @@ pub struct PriceLevelData {
     /// Number of orders at this price level
     pub order_count: usize,
     /// Orders at this price level
-    pub orders: Vec<OrderType<()>>,
+    pub orders: Vec<Order<()>>,
 }
 
 impl From<&PriceLevel> for PriceLevelData {
@@ -600,7 +600,7 @@ impl FromStr for PriceLevel {
                     ')' | ']' => bracket_level -= 1,
                     ',' if bracket_level == 0 => {
                         let order_str = &orders_part[last_split..i];
-                        let order = OrderType::<()>::from_str(order_str).map_err(|e| {
+                        let order = Order::<()>::from_str(order_str).map_err(|e| {
                             PriceLevelError::ParseError {
                                 message: format!("Order parse error: {e}"),
                             }
@@ -614,7 +614,7 @@ impl FromStr for PriceLevel {
 
             let order_str = &orders_part[last_split..];
             if !order_str.is_empty() {
-                let order = OrderType::<()>::from_str(order_str).map_err(|e| {
+                let order = Order::<()>::from_str(order_str).map_err(|e| {
                     PriceLevelError::ParseError {
                         message: format!("Order parse error: {e}"),
                     }
@@ -679,7 +679,7 @@ impl Display for PriceLevel {
 mod tests {
     use crate::errors::PriceLevelError;
     use crate::order::{
-        OrderCommon, OrderId, OrderType, OrderUpdate, PegReferenceType, Side, TimeInForce,
+        OrderCommon, OrderId, Order, OrderUpdate, PegReferenceType, Side, TimeInForce,
     };
     use crate::price_level::level::{PriceLevel, PriceLevelData};
     use crate::price_level::snapshot::SNAPSHOT_FORMAT_VERSION;
@@ -693,10 +693,10 @@ mod tests {
     static TIMESTAMP_COUNTER: AtomicU64 = AtomicU64::new(1616823000000);
 
     // Helper functions to create different order types for testing
-    pub fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
+    pub fn create_standard_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let order_id = OrderId::from_u64(id);
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::Standard {
+        Order::Standard {
             common: OrderCommon {
                 id: order_id,
                 price,
@@ -832,9 +832,9 @@ mod tests {
         }
     }
 
-    fn create_iceberg_order(id: u64, price: u64, visible: u64, hidden: u64) -> OrderType<()> {
+    fn create_iceberg_order(id: u64, price: u64, visible: u64, hidden: u64) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::IcebergOrder {
+        Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -848,9 +848,9 @@ mod tests {
         }
     }
 
-    fn create_post_only_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
+    fn create_post_only_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::PostOnly {
+        Order::PostOnly {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -863,9 +863,9 @@ mod tests {
         }
     }
 
-    fn create_trailing_stop_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
+    fn create_trailing_stop_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::TrailingStop {
+        Order::TrailingStop {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -880,9 +880,9 @@ mod tests {
         }
     }
 
-    fn create_pegged_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
+    fn create_pegged_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::PeggedOrder {
+        Order::PeggedOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -897,9 +897,9 @@ mod tests {
         }
     }
 
-    fn create_market_to_limit_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
+    fn create_market_to_limit_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::MarketToLimit {
+        Order::MarketToLimit {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -920,9 +920,9 @@ mod tests {
         threshold: u64,
         auto_replenish: bool,
         replenish_amount: Option<u64>,
-    ) -> OrderType<()> {
+    ) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::ReserveOrder {
+        Order::ReserveOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -939,9 +939,9 @@ mod tests {
         }
     }
 
-    fn create_fill_or_kill_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
+    fn create_fill_or_kill_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::Standard {
+        Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -954,9 +954,9 @@ mod tests {
         }
     }
 
-    fn create_immediate_or_cancel_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
+    fn create_immediate_or_cancel_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::Standard {
+        Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -974,9 +974,9 @@ mod tests {
         price: u64,
         quantity: u64,
         expiry: u64,
-    ) -> OrderType<()> {
+    ) -> Order<()> {
         let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-        OrderType::Standard {
+        Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -2327,7 +2327,7 @@ mod tests {
     fn test_price_level_update_price_same_value() {
         // Test lines 187-188
         let price_level = PriceLevel::new(10000);
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -2381,7 +2381,7 @@ mod tests {
         let price_level = PriceLevel::new(10000);
 
         // Add an order
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -2428,7 +2428,7 @@ mod tests {
         let price_level = PriceLevel::new(10000);
 
         // Add an order
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -2461,7 +2461,7 @@ mod tests {
         let price_level = PriceLevel::new(10000);
 
         // Add an iceberg order with visible and hidden quantities
-        let order = OrderType::IcebergOrder {
+        let order = Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -2480,7 +2480,7 @@ mod tests {
         assert_eq!(price_level.reserve_quantity(), 150);
 
         // Create a new iceberg order with different quantities
-        let new_order = OrderType::IcebergOrder {
+        let new_order = Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -2511,7 +2511,7 @@ mod tests {
         let price_level = PriceLevel::new(10000);
 
         // Add an order
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -2548,7 +2548,7 @@ mod tests {
         let price_level = PriceLevel::new(10000);
 
         // Add some orders
-        let order1 = OrderType::<()>::Standard {
+        let order1 = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -2561,7 +2561,7 @@ mod tests {
         };
         price_level.add_order(order1);
 
-        let order2 = OrderType::<()>::IcebergOrder {
+        let order2 = Order::<()>::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(2),
                 price: 10000,

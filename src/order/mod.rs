@@ -64,7 +64,7 @@ impl<T> fmt::Display for OrderCommon<T> {
 
 /// Represents different types of limit orders
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum OrderType<T> {
+pub enum Order<T> {
     /// Standard limit order
     Standard {
         #[serde(flatten)]
@@ -130,7 +130,7 @@ pub enum OrderType<T> {
     },
 }
 
-impl<T: Clone> OrderType<T> {
+impl<T: Clone> Order<T> {
     /// Create a new standard order with reduced quantity
     pub fn with_reduced_quantity(&self, new_quantity: u64) -> Self {
         let mut new = self.clone();
@@ -168,7 +168,7 @@ impl<T: Clone> OrderType<T> {
     }
 }
 
-impl<T: Clone> OrderType<T> {
+impl<T: Clone> Order<T> {
     /// Matches this order against an incoming quantity
     ///
     /// Returns a tuple containing:
@@ -346,7 +346,7 @@ impl<T: Clone> OrderType<T> {
     }
 }
 
-impl<T> OrderType<T> {
+impl<T> Order<T> {
     fn common(&self) -> &OrderCommon<T> {
         match self {
             Self::Standard { common, .. } => common,
@@ -440,7 +440,7 @@ impl<T> OrderType<T> {
     }
 
     /// Transform the extra fields type using a function
-    pub fn map_extra_fields<U, F>(self, f: F) -> OrderType<U>
+    pub fn map_extra_fields<U, F>(self, f: F) -> Order<U>
     where
         F: FnOnce(T) -> U,
     {
@@ -465,47 +465,47 @@ impl<T> OrderType<T> {
         };
 
         match self {
-            OrderType::Standard { common } => OrderType::Standard {
+            Order::Standard { common } => Order::Standard {
                 common: map_common_extra(common),
             },
-            OrderType::IcebergOrder {
+            Order::IcebergOrder {
                 common,
                 reserve_quantity,
-            } => OrderType::IcebergOrder {
+            } => Order::IcebergOrder {
                 common: map_common_extra(common),
                 reserve_quantity,
             },
-            OrderType::PostOnly { common } => OrderType::PostOnly {
+            Order::PostOnly { common } => Order::PostOnly {
                 common: map_common_extra(common),
             },
-            OrderType::TrailingStop {
+            Order::TrailingStop {
                 common,
                 trail_amount,
                 last_reference_price,
-            } => OrderType::TrailingStop {
+            } => Order::TrailingStop {
                 common: map_common_extra(common),
                 trail_amount,
                 last_reference_price,
             },
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 common,
                 reference_price_offset,
                 reference_price_type,
-            } => OrderType::PeggedOrder {
+            } => Order::PeggedOrder {
                 common: map_common_extra(common),
                 reference_price_offset,
                 reference_price_type,
             },
-            OrderType::MarketToLimit { common } => OrderType::MarketToLimit {
+            Order::MarketToLimit { common } => Order::MarketToLimit {
                 common: map_common_extra(common),
             },
-            OrderType::ReserveOrder {
+            Order::ReserveOrder {
                 common,
                 reserve_quantity,
                 replenish_threshold,
                 replenish_amount,
                 auto_replenish,
-            } => OrderType::ReserveOrder {
+            } => Order::ReserveOrder {
                 common: map_common_extra(common),
                 reserve_quantity,
                 replenish_threshold,
@@ -522,7 +522,7 @@ impl<T> OrderType<T> {
 /// Examples:
 /// - Standard:id=123;price=10000;quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC
 /// - IcebergOrder:id=124;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC
-impl<T: Default> FromStr for OrderType<T> {
+impl<T: Default> FromStr for Order<T> {
     type Err = PriceLevelError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -594,21 +594,21 @@ impl<T: Default> FromStr for OrderType<T> {
 
         // Parse specific order types
         match order_type {
-            "Standard" => Ok(OrderType::Standard { common }),
+            "Standard" => Ok(Order::Standard { common }),
             "IcebergOrder" => {
                 let reserve_quantity = parse_u64("reserve_quantity")?;
 
-                Ok(OrderType::IcebergOrder {
+                Ok(Order::IcebergOrder {
                     common,
                     reserve_quantity,
                 })
             }
-            "PostOnly" => Ok(OrderType::PostOnly { common }),
+            "PostOnly" => Ok(Order::PostOnly { common }),
             "TrailingStop" => {
                 let trail_amount = parse_u64("trail_amount")?;
                 let last_reference_price = parse_u64("last_reference_price")?;
 
-                Ok(OrderType::TrailingStop {
+                Ok(Order::TrailingStop {
                     common,
                     trail_amount,
                     last_reference_price,
@@ -630,13 +630,13 @@ impl<T: Default> FromStr for OrderType<T> {
                     }
                 };
 
-                Ok(OrderType::PeggedOrder {
+                Ok(Order::PeggedOrder {
                     common,
                     reference_price_offset,
                     reference_price_type,
                 })
             }
-            "MarketToLimit" => Ok(OrderType::MarketToLimit { common }),
+            "MarketToLimit" => Ok(Order::MarketToLimit { common }),
             "ReserveOrder" => {
                 let reserve_quantity = parse_u64("reserve_quantity")?;
                 let replenish_threshold = parse_u64("replenish_threshold")?;
@@ -658,7 +658,7 @@ impl<T: Default> FromStr for OrderType<T> {
                     }
                 };
 
-                Ok(OrderType::ReserveOrder {
+                Ok(Order::ReserveOrder {
                     common,
                     reserve_quantity,
                     replenish_threshold,
@@ -671,13 +671,13 @@ impl<T: Default> FromStr for OrderType<T> {
     }
 }
 
-impl<T> fmt::Display for OrderType<T> {
+impl<T> fmt::Display for Order<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OrderType::Standard { common } => {
+            Order::Standard { common } => {
                 write!(f, "Standard:{common}",)
             }
-            OrderType::IcebergOrder {
+            Order::IcebergOrder {
                 common,
                 reserve_quantity,
             } => {
@@ -686,10 +686,10 @@ impl<T> fmt::Display for OrderType<T> {
                     "IcebergOrder:{common};reserve_quantity={reserve_quantity}"
                 )
             }
-            OrderType::PostOnly { common } => {
+            Order::PostOnly { common } => {
                 write!(f, "PostOnly:{common}")
             }
-            OrderType::TrailingStop {
+            Order::TrailingStop {
                 common,
                 trail_amount,
                 last_reference_price,
@@ -699,7 +699,7 @@ impl<T> fmt::Display for OrderType<T> {
                     "TrailingStop:{common};trail_amount={trail_amount};last_reference_price={last_reference_price}"
                 )
             }
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 common,
                 reference_price_offset,
                 reference_price_type,
@@ -709,10 +709,10 @@ impl<T> fmt::Display for OrderType<T> {
                     "PeggedOrder:{common};reference_price_offset={reference_price_offset};reference_price_type={reference_price_type}"
                 )
             }
-            OrderType::MarketToLimit { common } => {
+            Order::MarketToLimit { common } => {
                 write!(f, "MarketToLimit:{common}")
             }
-            OrderType::ReserveOrder {
+            Order::ReserveOrder {
                 common,
                 reserve_quantity,
                 replenish_threshold,
@@ -730,7 +730,7 @@ impl<T> fmt::Display for OrderType<T> {
     }
 }
 
-impl From<OrderQueue> for Vec<Arc<OrderType<()>>> {
+impl From<OrderQueue> for Vec<Arc<Order<()>>> {
     fn from(queue: OrderQueue) -> Self {
         queue.to_vec()
     }
@@ -738,9 +738,9 @@ impl From<OrderQueue> for Vec<Arc<OrderType<()>>> {
 
 // Type aliases for common use cases
 #[allow(dead_code)]
-pub type SimpleOrderType = OrderType<()>;
+pub type SimpleOrderType = Order<()>;
 #[allow(dead_code)]
-pub type OrderTypeWithMetadata = OrderType<OrderMetadata>;
+pub type OrderTypeWithMetadata = Order<OrderMetadata>;
 
 // Example of what the extra fields could contain
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -754,12 +754,12 @@ pub struct OrderMetadata {
 #[cfg(test)]
 mod tests {
     use crate::order::time_in_force::TimeInForce;
-    use crate::order::{OrderCommon, OrderId, OrderType, PegReferenceType, Side};
+    use crate::order::{Order, OrderCommon, OrderId, PegReferenceType, Side};
     use std::str::FromStr;
     use tracing::info;
 
-    fn create_standard_order() -> OrderType<()> {
-        OrderType::<()>::Standard {
+    fn create_standard_order() -> Order<()> {
+        Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(123),
                 price: 10000,
@@ -773,8 +773,8 @@ mod tests {
     }
 
     // Helper function to create an iceberg order for testing
-    fn create_iceberg_order() -> OrderType<()> {
-        OrderType::<()>::IcebergOrder {
+    fn create_iceberg_order() -> Order<()> {
+        Order::<()>::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(124),
                 price: 10000,
@@ -789,8 +789,8 @@ mod tests {
     }
 
     // Helper function to create a post-only order for testing
-    fn create_post_only_order() -> OrderType<()> {
-        OrderType::<()>::PostOnly {
+    fn create_post_only_order() -> Order<()> {
+        Order::<()>::PostOnly {
             common: OrderCommon {
                 id: OrderId::from_u64(125),
                 price: 10000,
@@ -804,8 +804,8 @@ mod tests {
     }
 
     // Helper function to create a trailing stop order for testing
-    fn create_trailing_stop_order() -> OrderType<()> {
-        OrderType::<()>::TrailingStop {
+    fn create_trailing_stop_order() -> Order<()> {
+        Order::<()>::TrailingStop {
             common: OrderCommon {
                 id: OrderId::from_u64(126),
                 price: 10000,
@@ -821,8 +821,8 @@ mod tests {
     }
 
     // Helper function to create a pegged order for testing
-    fn create_pegged_order() -> OrderType<()> {
-        OrderType::<()>::PeggedOrder {
+    fn create_pegged_order() -> Order<()> {
+        Order::<()>::PeggedOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(127),
                 price: 10000,
@@ -838,8 +838,8 @@ mod tests {
     }
 
     // Helper function to create a market-to-limit order for testing
-    fn create_market_to_limit_order() -> OrderType<()> {
-        OrderType::<()>::MarketToLimit {
+    fn create_market_to_limit_order() -> Order<()> {
+        Order::<()>::MarketToLimit {
             common: OrderCommon {
                 id: OrderId::from_u64(128),
                 price: 10000,
@@ -853,8 +853,8 @@ mod tests {
     }
 
     // Helper function to create a reserve order for testing
-    fn create_reserve_order() -> OrderType<()> {
-        OrderType::<()>::ReserveOrder {
+    fn create_reserve_order() -> Order<()> {
+        Order::<()>::ReserveOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(129),
                 price: 10000,
@@ -960,7 +960,7 @@ mod tests {
         assert!(!order.is_immediate());
 
         // Test with IOC time-in-force
-        if let OrderType::<()>::Standard {
+        if let Order::<()>::Standard {
             common:
                 OrderCommon {
                     ref mut time_in_force,
@@ -981,7 +981,7 @@ mod tests {
         assert!(!order.is_fill_or_kill());
 
         // Test with FOK time-in-force
-        if let OrderType::<()>::Standard {
+        if let Order::<()>::Standard {
             common:
                 OrderCommon {
                     ref mut time_in_force,
@@ -1013,7 +1013,7 @@ mod tests {
         let order = create_standard_order();
         let reduced = order.with_reduced_quantity(3);
 
-        if let OrderType::<()>::Standard {
+        if let Order::<()>::Standard {
             common:
                 OrderCommon {
                     display_quantity: quantity,
@@ -1030,7 +1030,7 @@ mod tests {
         let order = create_iceberg_order();
         let reduced = order.with_reduced_quantity(0);
 
-        if let OrderType::<()>::IcebergOrder {
+        if let Order::<()>::IcebergOrder {
             common: OrderCommon {
                 display_quantity, ..
             },
@@ -1048,7 +1048,7 @@ mod tests {
         let order = create_post_only_order();
         let reduced = order.with_reduced_quantity(2);
 
-        if let OrderType::<()>::PostOnly {
+        if let Order::<()>::PostOnly {
             common:
                 OrderCommon {
                     display_quantity: quantity,
@@ -1067,7 +1067,7 @@ mod tests {
         let reduced = order.with_reduced_quantity(3);
 
         match reduced {
-            OrderType::<()>::TrailingStop {
+            Order::<()>::TrailingStop {
                 common:
                     OrderCommon {
                         display_quantity: quantity,
@@ -1085,7 +1085,7 @@ mod tests {
         let reduced = order.with_reduced_quantity(1);
 
         match reduced {
-            OrderType::<()>::PeggedOrder {
+            Order::<()>::PeggedOrder {
                 common:
                     OrderCommon {
                         display_quantity: quantity,
@@ -1103,7 +1103,7 @@ mod tests {
         let reduced = order.with_reduced_quantity(4);
 
         match reduced {
-            OrderType::<()>::MarketToLimit {
+            Order::<()>::MarketToLimit {
                 common:
                     OrderCommon {
                         display_quantity: quantity,
@@ -1121,7 +1121,7 @@ mod tests {
         let reduced = order.with_reduced_quantity(0);
 
         match reduced {
-            OrderType::<()>::ReserveOrder {
+            Order::<()>::ReserveOrder {
                 common: OrderCommon {
                     display_quantity, ..
                 },
@@ -1141,7 +1141,7 @@ mod tests {
         let order = create_iceberg_order();
         let (refreshed, _used) = order.refresh_iceberg(2);
 
-        if let OrderType::<()>::IcebergOrder {
+        if let Order::<()>::IcebergOrder {
             common: OrderCommon {
                 display_quantity, ..
             },
@@ -1159,7 +1159,7 @@ mod tests {
         let order = create_reserve_order();
         let (refreshed, used) = order.refresh_iceberg(3);
 
-        if let OrderType::<()>::ReserveOrder {
+        if let Order::<()>::ReserveOrder {
             common: OrderCommon {
                 display_quantity, ..
             },
@@ -1178,7 +1178,7 @@ mod tests {
         let order = create_standard_order();
         let (refreshed, _used) = order.refresh_iceberg(2);
 
-        if let OrderType::<()>::Standard {
+        if let Order::<()>::Standard {
             common:
                 OrderCommon {
                     display_quantity: quantity,
@@ -1195,9 +1195,9 @@ mod tests {
     #[test]
     fn test_from_str_standard() {
         let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
-        let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
+        let order: Order<()> = Order::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::Standard {
+        if let Order::<()>::Standard {
             common:
                 OrderCommon {
                     id,
@@ -1224,9 +1224,9 @@ mod tests {
     #[test]
     fn test_from_str_iceberg() {
         let order_str = "IcebergOrder:id=00000000-0000-007c-0000-000000000000;price=10000;display_quantity=3;reserve_quantity=7;side=SELL;timestamp=1616823000001;time_in_force=GTC";
-        let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
+        let order: Order<()> = Order::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::IcebergOrder {
+        if let Order::<()>::IcebergOrder {
             common:
                 OrderCommon {
                     id,
@@ -1255,9 +1255,9 @@ mod tests {
     #[test]
     fn test_from_str_trailing_stop() {
         let order_str = "TrailingStop:id=00000000-0000-007e-0000-000000000000;price=10000;display_quantity=8;side=SELL;timestamp=1616823000000;time_in_force=GTC;trail_amount=100;last_reference_price=10100";
-        let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
+        let order: Order<()> = Order::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::TrailingStop {
+        if let Order::<()>::TrailingStop {
             common:
                 OrderCommon {
                     id,
@@ -1288,9 +1288,9 @@ mod tests {
     #[test]
     fn test_from_str_pegged() {
         let order_str = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=BestAsk";
-        let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
+        let order: Order<()> = Order::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::PeggedOrder {
+        if let Order::<()>::PeggedOrder {
             common:
                 OrderCommon {
                     id,
@@ -1322,9 +1322,9 @@ mod tests {
     fn test_from_str_different_time_in_force() {
         // Test IOC time-in-force
         let order_str = "PostOnly:id=00000000-0000-007d-0000-000000000000;price=9950;display_quantity=25;side=BUY;timestamp=1616823000000;time_in_force=GTC";
-        let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
+        let order: Order<()> = Order::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::PostOnly {
+        if let Order::<()>::PostOnly {
             common: OrderCommon { time_in_force, .. },
             ..
         } = order
@@ -1336,9 +1336,9 @@ mod tests {
 
         // Test GTD time-in-force
         let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTD-1616909400000";
-        let order: OrderType<()> = OrderType::from_str(order_str).unwrap();
+        let order: Order<()> = Order::from_str(order_str).unwrap();
 
-        if let OrderType::<()>::Standard {
+        if let Order::<()>::Standard {
             common: OrderCommon { time_in_force, .. },
             ..
         } = order
@@ -1353,22 +1353,22 @@ mod tests {
     fn test_from_str_errors() {
         // Test invalid format
         let order_str = "Standard;id=00000000-0000-007b-0000-000000000000;price=10000";
-        let result: Result<OrderType<()>, _> = OrderType::from_str(order_str);
+        let result: Result<Order<()>, _> = Order::from_str(order_str);
         assert!(result.is_err());
 
         // Test unknown order type
         let order_str = "Unknown:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
-        let result: Result<OrderType<()>, _> = OrderType::from_str(order_str);
+        let result: Result<Order<()>, _> = Order::from_str(order_str);
         assert!(result.is_err());
 
         // Test missing field
         let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;side=BUY;timestamp=1616823000000;time_in_force=GTC";
-        let result: Result<OrderType<()>, _> = OrderType::from_str(order_str);
+        let result: Result<Order<()>, _> = Order::from_str(order_str);
         assert!(result.is_err());
 
         // Test invalid field value
         let order_str = "Standard:id=00000000-0000-007b-0000-000000000000;price=invalid;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
-        let result: Result<OrderType<()>, _> = OrderType::from_str(order_str);
+        let result: Result<Order<()>, _> = Order::from_str(order_str);
         assert!(result.is_err());
     }
 
@@ -1426,12 +1426,12 @@ mod tests {
         // Test that converting to string and parsing back works correctly
         let original_order = create_standard_order();
         let string_representation = original_order.to_string();
-        let parsed_order: Result<OrderType<()>, _> = OrderType::from_str(&string_representation);
+        let parsed_order: Result<Order<()>, _> = Order::from_str(&string_representation);
 
         // If Display is properly implemented, this should work
         if let Ok(parsed) = parsed_order {
             if let (
-                OrderType::<()>::Standard {
+                Order::<()>::Standard {
                     common:
                         OrderCommon {
                             id: id1,
@@ -1441,7 +1441,7 @@ mod tests {
                             ..
                         },
                 },
-                OrderType::<()>::Standard {
+                Order::<()>::Standard {
                     common:
                         OrderCommon {
                             id: id2,
@@ -1491,7 +1491,7 @@ mod tests {
     #[test]
     fn test_with_reduced_quantity_market_to_limit() {
         // Lines 663-664
-        let order = OrderType::<()>::MarketToLimit {
+        let order = Order::<()>::MarketToLimit {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -1507,7 +1507,7 @@ mod tests {
 
         // Verify the quantity is not changed (market to limit orders don't support
         // reduced quantity in the current implementation)
-        if let OrderType::MarketToLimit {
+        if let Order::MarketToLimit {
             common:
                 OrderCommon {
                     display_quantity: quantity,
@@ -1525,7 +1525,7 @@ mod tests {
     #[test]
     fn test_with_reduced_quantity_pegged_order() {
         // Lines 720-721
-        let order = OrderType::<()>::PeggedOrder {
+        let order = Order::<()>::PeggedOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -1543,7 +1543,7 @@ mod tests {
 
         // Verify the quantity is not changed (pegged orders don't support
         // reduced quantity in the current implementation)
-        if let OrderType::PeggedOrder {
+        if let Order::PeggedOrder {
             common:
                 OrderCommon {
                     display_quantity: quantity,
@@ -1561,7 +1561,7 @@ mod tests {
     #[test]
     fn test_with_reduced_quantity_trailing_stop() {
         // Line 741
-        let order = OrderType::<()>::TrailingStop {
+        let order = Order::<()>::TrailingStop {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -1579,7 +1579,7 @@ mod tests {
 
         // Verify the quantity is not changed (trailing stop orders don't support
         // reduced quantity in the current implementation)
-        if let OrderType::TrailingStop {
+        if let Order::TrailingStop {
             common:
                 OrderCommon {
                     display_quantity: quantity,
@@ -1597,7 +1597,7 @@ mod tests {
     #[test]
     fn test_refresh_iceberg_non_iceberg_orders() {
         // Line 760
-        let standard_order = OrderType::<()>::Standard {
+        let standard_order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -1615,7 +1615,7 @@ mod tests {
         assert_eq!(used, 0);
 
         match refreshed {
-            OrderType::Standard {
+            Order::Standard {
                 common:
                     OrderCommon {
                         display_quantity: quantity,
@@ -1630,7 +1630,7 @@ mod tests {
     #[test]
     fn test_match_against_trailing_stop_order() {
         // Line 809 (or nearby)
-        let order = OrderType::<()>::TrailingStop {
+        let order = Order::<()>::TrailingStop {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -1671,12 +1671,12 @@ mod tests {
 #[cfg(test)]
 mod test_order_type_display {
     use crate::order::time_in_force::TimeInForce;
-    use crate::order::{OrderCommon, OrderId, OrderType, PegReferenceType, Side};
+    use crate::order::{Order, OrderCommon, OrderId, PegReferenceType, Side};
     use std::str::FromStr;
 
     #[test]
     fn test_standard_order_display() {
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(123),
                 price: 10000,
@@ -1695,10 +1695,10 @@ mod test_order_type_display {
         );
 
         // Test that it can be parsed back (round-trip)
-        let parsed: Result<OrderType<()>, _> = OrderType::from_str(&display_str);
+        let parsed: Result<Order<()>, _> = Order::from_str(&display_str);
         assert!(parsed.is_ok(), "Failed to parse Standard order string");
 
-        if let Ok(OrderType::Standard {
+        if let Ok(Order::Standard {
             common:
                 OrderCommon {
                     id,
@@ -1720,7 +1720,7 @@ mod test_order_type_display {
 
     #[test]
     fn test_iceberg_order_display() {
-        let order = OrderType::<()>::IcebergOrder {
+        let order = Order::<()>::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(124),
                 price: 10000,
@@ -1740,10 +1740,10 @@ mod test_order_type_display {
         );
 
         // Test that it can be parsed back (round-trip)
-        let parsed: Result<OrderType<()>, _> = OrderType::from_str(&display_str);
+        let parsed: Result<Order<()>, _> = Order::from_str(&display_str);
         assert!(parsed.is_ok(), "Failed to parse IcebergOrder string");
 
-        if let Ok(OrderType::IcebergOrder {
+        if let Ok(Order::IcebergOrder {
             common:
                 OrderCommon {
                     id,
@@ -1768,7 +1768,7 @@ mod test_order_type_display {
 
     #[test]
     fn test_post_only_order_display() {
-        let order = OrderType::<()>::PostOnly {
+        let order = Order::<()>::PostOnly {
             common: OrderCommon {
                 id: OrderId::from_u64(125),
                 price: 10000,
@@ -1803,7 +1803,7 @@ mod test_order_type_display {
 
     #[test]
     fn test_trailing_stop_order_display() {
-        let order = OrderType::<()>::TrailingStop {
+        let order = Order::<()>::TrailingStop {
             common: OrderCommon {
                 id: OrderId::from_u64(126),
                 price: 10000,
@@ -1837,7 +1837,7 @@ mod test_order_type_display {
 
     #[test]
     fn test_pegged_order_display() {
-        let order = OrderType::<()>::PeggedOrder {
+        let order = Order::<()>::PeggedOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(127),
                 price: 10000,
@@ -1871,7 +1871,7 @@ mod test_order_type_display {
 
     #[test]
     fn test_market_to_limit_order_display() {
-        let order = OrderType::<()>::MarketToLimit {
+        let order = Order::<()>::MarketToLimit {
             common: OrderCommon {
                 id: OrderId::from_u64(128),
                 price: 10000,
@@ -1901,7 +1901,7 @@ mod test_order_type_display {
 
     #[test]
     fn test_reserve_order_display() {
-        let order = OrderType::<()>::ReserveOrder {
+        let order = Order::<()>::ReserveOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(129),
                 price: 10000,
@@ -1933,16 +1933,16 @@ mod test_order_type_display {
 
 #[cfg(test)]
 mod from_str_specific_tests {
-    use crate::order::{OrderCommon, OrderId, OrderType, PegReferenceType, Side, TimeInForce};
+    use crate::order::{Order, OrderCommon, OrderId, PegReferenceType, Side, TimeInForce};
     use std::str::FromStr;
 
     #[test]
     fn test_from_str_reserve_order() {
         let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=0;replenish_amount=1;auto_replenish=false";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::ReserveOrder {
+            Order::ReserveOrder {
                 common:
                     OrderCommon {
                         id,
@@ -1975,10 +1975,10 @@ mod from_str_specific_tests {
 
         // Test with None replenish_amount
         let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=10;replenish_amount=None;auto_replenish=true";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::ReserveOrder {
+            Order::ReserveOrder {
                 replenish_amount,
                 replenish_threshold,
                 auto_replenish,
@@ -1993,10 +1993,10 @@ mod from_str_specific_tests {
 
         // Test with different time_in_force
         let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTD-1617000000000;replenish_threshold=5;replenish_amount=2;auto_replenish=true";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::ReserveOrder {
+            Order::ReserveOrder {
                 common: OrderCommon { time_in_force, .. },
                 replenish_threshold,
                 replenish_amount,
@@ -2015,10 +2015,10 @@ mod from_str_specific_tests {
     #[test]
     fn test_from_str_market_to_limit_order() {
         let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::MarketToLimit {
+            Order::MarketToLimit {
                 common:
                     OrderCommon {
                         id,
@@ -2043,10 +2043,10 @@ mod from_str_specific_tests {
 
         // Test with IOC time-in-force
         let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=IOC";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::MarketToLimit {
+            Order::MarketToLimit {
                 common: OrderCommon { time_in_force, .. },
                 ..
             } => {
@@ -2057,10 +2057,10 @@ mod from_str_specific_tests {
 
         // Test with SELL side
         let input = "MarketToLimit:id=00000000-0000-0080-0000-000000000000;price=10000;display_quantity=5;side=SELL;timestamp=1616823000000;time_in_force=GTC";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::MarketToLimit {
+            Order::MarketToLimit {
                 common: OrderCommon { side, .. },
                 ..
             } => {
@@ -2074,10 +2074,10 @@ mod from_str_specific_tests {
     fn test_from_str_pegged_order() {
         // Test with BestAsk reference type
         let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=BestAsk";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 common:
                     OrderCommon {
                         id,
@@ -2106,10 +2106,10 @@ mod from_str_specific_tests {
 
         // Test with BestBid reference type
         let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=SELL;timestamp=1616823000000;time_in_force=IOC;reference_price_offset=50;reference_price_type=BestBid";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 common:
                     OrderCommon {
                         side,
@@ -2130,10 +2130,10 @@ mod from_str_specific_tests {
 
         // Test with MidPrice reference type
         let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=0;reference_price_type=MidPrice";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 reference_price_offset,
                 reference_price_type,
                 ..
@@ -2146,10 +2146,10 @@ mod from_str_specific_tests {
 
         // Test with LastTrade reference type
         let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-100;reference_price_type=LastTrade";
-        let order: OrderType<()> = OrderType::from_str(input).unwrap();
+        let order: Order<()> = Order::from_str(input).unwrap();
 
         match order {
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 reference_price_offset,
                 reference_price_type,
                 ..
@@ -2164,7 +2164,7 @@ mod from_str_specific_tests {
     #[test]
     fn test_from_str_invalid_pegged_reference_type() {
         let input = "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset=-50;reference_price_type=InvalidType";
-        let result: Result<OrderType<()>, _> = OrderType::from_str(input);
+        let result: Result<Order<()>, _> = Order::from_str(input);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -2179,7 +2179,7 @@ mod from_str_specific_tests {
     #[test]
     fn test_from_str_invalid_reserve_order_auto_replenish() {
         let input = "ReserveOrder:id=00000000-0000-0081-0000-000000000000;price=10000;display_quantity=1;reserve_quantity=4;side=SELL;timestamp=1616823000000;time_in_force=GTC;replenish_threshold=0;replenish_amount=1;auto_replenish=invalid";
-        let result: Result<OrderType<()>, _> = OrderType::from_str(input);
+        let result: Result<Order<()>, _> = Order::from_str(input);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -2195,15 +2195,15 @@ mod from_str_specific_tests {
     fn test_edge_cases() {
         // Test case-insensitivity for side
         let input = "Standard:id=00000000-0000-007b-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=IOC";
-        let order_result = OrderType::from_str(input);
+        let order_result = Order::from_str(input);
         assert!(
             order_result.is_ok(),
             "Failed to parse MarketToLimit order string"
         );
-        let order: OrderType<()> = order_result.unwrap();
+        let order: Order<()> = order_result.unwrap();
 
         match order {
-            OrderType::Standard {
+            Order::Standard {
                 common: OrderCommon { side, .. },
             } => {
                 assert_eq!(side, Side::Buy);
@@ -2219,10 +2219,10 @@ mod from_str_specific_tests {
             u64::MAX,
             i64::MAX
         );
-        let order: OrderType<()> = OrderType::from_str(&input).unwrap();
+        let order: Order<()> = Order::from_str(&input).unwrap();
 
         match order {
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 common:
                     OrderCommon {
                         id,
@@ -2249,10 +2249,10 @@ mod from_str_specific_tests {
             "PeggedOrder:id=00000000-0000-007f-0000-000000000000;price=10000;display_quantity=5;side=BUY;timestamp=1616823000000;time_in_force=GTC;reference_price_offset={};reference_price_type=BestAsk",
             i64::MIN
         );
-        let order: OrderType<()> = OrderType::from_str(&input).unwrap();
+        let order: Order<()> = Order::from_str(&input).unwrap();
 
         match order {
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 reference_price_offset,
                 ..
             } => {
@@ -2266,7 +2266,7 @@ mod from_str_specific_tests {
     fn test_roundtrip_serialization() {
         // Create sample orders
         let orders = vec![
-            OrderType::ReserveOrder {
+            Order::ReserveOrder {
                 common: OrderCommon {
                     id: OrderId::from_u64(129),
                     price: 10000,
@@ -2281,7 +2281,7 @@ mod from_str_specific_tests {
                 replenish_amount: Some(1),
                 auto_replenish: false,
             },
-            OrderType::MarketToLimit {
+            Order::MarketToLimit {
                 common: OrderCommon {
                     id: OrderId::from_u64(128),
                     price: 10000,
@@ -2292,7 +2292,7 @@ mod from_str_specific_tests {
                     extra_fields: (),
                 },
             },
-            OrderType::PeggedOrder {
+            Order::PeggedOrder {
                 common: OrderCommon {
                     id: OrderId::from_u64(127),
                     price: 10000,
@@ -2310,12 +2310,12 @@ mod from_str_specific_tests {
         // Test round-trip for each order type
         for original_order in orders {
             let string_representation = original_order.to_string();
-            let parsed_order: OrderType<()> = OrderType::from_str(&string_representation).unwrap();
+            let parsed_order: Order<()> = Order::from_str(&string_representation).unwrap();
 
             // Compare specific fields based on order type
             match (original_order, parsed_order) {
                 (
-                    OrderType::ReserveOrder {
+                    Order::ReserveOrder {
                         common:
                             OrderCommon {
                                 id: id1,
@@ -2330,7 +2330,7 @@ mod from_str_specific_tests {
                         auto_replenish: auto1,
                         ..
                     },
-                    OrderType::ReserveOrder {
+                    Order::ReserveOrder {
                         common:
                             OrderCommon {
                                 id: id2,
@@ -2356,7 +2356,7 @@ mod from_str_specific_tests {
                     assert_eq!(auto1, auto2);
                 }
                 (
-                    OrderType::MarketToLimit {
+                    Order::MarketToLimit {
                         common:
                             OrderCommon {
                                 id: id1,
@@ -2368,7 +2368,7 @@ mod from_str_specific_tests {
                             },
                         ..
                     },
-                    OrderType::MarketToLimit {
+                    Order::MarketToLimit {
                         common:
                             OrderCommon {
                                 id: id2,
@@ -2388,7 +2388,7 @@ mod from_str_specific_tests {
                     assert_eq!(tif1, tif2);
                 }
                 (
-                    OrderType::PeggedOrder {
+                    Order::PeggedOrder {
                         common:
                             OrderCommon {
                                 id: id1,
@@ -2401,7 +2401,7 @@ mod from_str_specific_tests {
                         reference_price_type: ref_type1,
                         ..
                     },
-                    OrderType::PeggedOrder {
+                    Order::PeggedOrder {
                         common:
                             OrderCommon {
                                 id: id2,

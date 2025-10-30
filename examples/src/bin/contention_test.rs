@@ -1,7 +1,7 @@
 // examples/src/bin/contention_test.rs
 
 use pricelevel::{
-    OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+    OrderCommon, OrderId, Order, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
     setup_logger,
 };
 use std::collections::HashMap;
@@ -192,8 +192,8 @@ fn setup_orders_for_read_write_test(price_level: &PriceLevel) {
 }
 
 // Helper function to create a standard order
-fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
-    OrderType::Standard {
+fn create_standard_order(id: u64, price: u64, quantity: u64) -> Order<()> {
+    Order::Standard {
         common: OrderCommon {
             id: OrderId::from_u64(id),
             price,

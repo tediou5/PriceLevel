@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{OrderCommon, OrderId, OrderType, PriceLevel, Side, TimeInForce, UuidGenerator};
+use pricelevel::{OrderCommon, OrderId, Order, PriceLevel, Side, TimeInForce, UuidGenerator};
 use std::hint::black_box;
 use uuid::Uuid;
 
@@ -116,7 +116,7 @@ fn setup_standard_orders(order_count: u64) -> PriceLevel {
     let price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
-        let order = OrderType::Standard {
+        let order = Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,
@@ -138,7 +138,7 @@ fn setup_iceberg_orders(order_count: u64) -> PriceLevel {
     let price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
-        let order = OrderType::IcebergOrder {
+        let order = Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,
@@ -161,7 +161,7 @@ fn setup_reserve_orders(order_count: u64) -> PriceLevel {
     let price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
-        let order = OrderType::ReserveOrder {
+        let order = Order::ReserveOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,
@@ -188,7 +188,7 @@ fn setup_mixed_orders(order_count: u64) -> PriceLevel {
 
     for i in 0..order_count {
         let order = match i % 3 {
-            0 => OrderType::Standard {
+            0 => Order::Standard {
                 common: OrderCommon {
                     id: OrderId::from_u64(i),
                     price: 10000,
@@ -199,7 +199,7 @@ fn setup_mixed_orders(order_count: u64) -> PriceLevel {
                     extra_fields: (),
                 },
             },
-            1 => OrderType::IcebergOrder {
+            1 => Order::IcebergOrder {
                 common: OrderCommon {
                     id: OrderId::from_u64(i),
                     price: 10000,
@@ -211,7 +211,7 @@ fn setup_mixed_orders(order_count: u64) -> PriceLevel {
                 },
                 reserve_quantity: 15,
             },
-            _ => OrderType::PostOnly {
+            _ => Order::PostOnly {
                 common: OrderCommon {
                     id: OrderId::from_u64(i),
                     price: 10000,

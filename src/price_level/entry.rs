@@ -178,7 +178,7 @@ impl FromStr for OrderBookEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::order::{OrderCommon, OrderId, OrderType, Side, TimeInForce};
+    use crate::order::{OrderCommon, OrderId, Order, Side, TimeInForce};
     use crate::price_level::entry::OrderBookEntry;
     use crate::price_level::level::PriceLevel;
     use std::str::FromStr;
@@ -301,7 +301,7 @@ mod tests {
         let entry = OrderBookEntry::new(level.clone(), 5);
 
         // Add an order to make the test more meaningful
-        let order = OrderType::Standard {
+        let order = Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -392,7 +392,7 @@ mod tests_order_book_entry {
         assert_eq!(entry1.order_count(), 0);
 
         // Add some orders and check again
-        let order_type = crate::order::OrderType::Standard {
+        let order_type = crate::order::Order::Standard {
             common: crate::order::OrderCommon {
                 id: crate::order::OrderId::from_u64(1),
                 price: 1000,
@@ -409,7 +409,7 @@ mod tests_order_book_entry {
 
         // Add another order
         // Add one more order with different ID
-        let order_type3 = crate::order::OrderType::Standard {
+        let order_type3 = crate::order::Order::Standard {
             common: crate::order::OrderCommon {
                 id: crate::order::OrderId::from_u64(3),
                 price: 1000,
@@ -542,7 +542,7 @@ mod tests_order_book_entry {
         assert_eq!(entry.total_quantity(), 0);
 
         // Add an order with visible quantity
-        let standard_order = crate::order::OrderType::Standard {
+        let standard_order = crate::order::Order::Standard {
             common: crate::order::OrderCommon {
                 id: crate::order::OrderId::from_u64(1),
                 price: 1000,
@@ -560,7 +560,7 @@ mod tests_order_book_entry {
         assert_eq!(entry.total_quantity(), 10);
 
         // Add an iceberg order with hidden quantity
-        let iceberg_order = crate::order::OrderType::IcebergOrder {
+        let iceberg_order = crate::order::Order::IcebergOrder {
             common: crate::order::OrderCommon {
                 id: crate::order::OrderId::from_u64(2),
                 price: 1000,

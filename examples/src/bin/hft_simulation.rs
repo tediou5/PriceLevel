@@ -1,7 +1,7 @@
 // examples/src/bin/hft_simulation.rs
 
 use pricelevel::{
-    OrderCommon, OrderId, OrderType, OrderUpdate, PegReferenceType, PriceLevel, Side, TimeInForce,
+    OrderCommon, OrderId, Order, OrderUpdate, PegReferenceType, PriceLevel, Side, TimeInForce,
     UuidGenerator, setup_logger,
 };
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -313,8 +313,8 @@ fn setup_initial_orders(price_level: &PriceLevel, count: u64) {
 }
 
 // Helper function to create a standard order
-fn create_standard_order(id: u64) -> OrderType<()> {
-    OrderType::Standard {
+fn create_standard_order(id: u64) -> Order<()> {
+    Order::Standard {
         common: OrderCommon {
             id: OrderId::from_u64(id),
             price: PRICE,
@@ -328,8 +328,8 @@ fn create_standard_order(id: u64) -> OrderType<()> {
 }
 
 // Helper function to create an iceberg order
-fn create_iceberg_order(id: u64) -> OrderType<()> {
-    OrderType::IcebergOrder {
+fn create_iceberg_order(id: u64) -> Order<()> {
+    Order::IcebergOrder {
         common: OrderCommon {
             id: OrderId::from_u64(id),
             price: PRICE,
@@ -344,8 +344,8 @@ fn create_iceberg_order(id: u64) -> OrderType<()> {
 }
 
 // Helper function to create a post-only order
-fn create_post_only_order(id: u64) -> OrderType<()> {
-    OrderType::PostOnly {
+fn create_post_only_order(id: u64) -> Order<()> {
+    Order::PostOnly {
         common: OrderCommon {
             id: OrderId::from_u64(id),
             price: PRICE,
@@ -359,8 +359,8 @@ fn create_post_only_order(id: u64) -> OrderType<()> {
 }
 
 // Helper function to create a reserve order
-fn create_reserve_order(id: u64) -> OrderType<()> {
-    OrderType::ReserveOrder {
+fn create_reserve_order(id: u64) -> Order<()> {
+    Order::ReserveOrder {
         common: OrderCommon {
             id: OrderId::from_u64(id),
             price: PRICE,
@@ -378,8 +378,8 @@ fn create_reserve_order(id: u64) -> OrderType<()> {
 }
 
 // Helper function to create a pegged order
-fn create_pegged_order(id: u64) -> OrderType<()> {
-    OrderType::PeggedOrder {
+fn create_pegged_order(id: u64) -> Order<()> {
+    Order::PeggedOrder {
         common: OrderCommon {
             id: OrderId::from_u64(id),
             price: PRICE,

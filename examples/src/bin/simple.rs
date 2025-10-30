@@ -1,7 +1,7 @@
 // examples/src/bin/multi_threaded_price_level.rs
 
 use pricelevel::{
-    OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+    OrderCommon, OrderId, Order, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
     setup_logger,
 };
 use std::sync::{Arc, Barrier};
@@ -200,7 +200,7 @@ fn main() {
 fn setup_initial_orders(price_level: &PriceLevel) {
     // Add 200 standard orders
     for i in 0..200 {
-        let order = OrderType::Standard {
+        let order = Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,
@@ -216,7 +216,7 @@ fn setup_initial_orders(price_level: &PriceLevel) {
 
     // Add some iceberg orders
     for i in 200..220 {
-        let order = OrderType::IcebergOrder {
+        let order = Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,
@@ -233,7 +233,7 @@ fn setup_initial_orders(price_level: &PriceLevel) {
 
     // Add some reserve orders
     for i in 220..240 {
-        let order = OrderType::ReserveOrder {
+        let order = Order::ReserveOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,
@@ -253,7 +253,7 @@ fn setup_initial_orders(price_level: &PriceLevel) {
 }
 
 // Helper function to create different types of orders based on thread ID
-fn create_order(thread_id: usize, order_id: u64) -> OrderType<()> {
+fn create_order(thread_id: usize, order_id: u64) -> Order<()> {
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -261,7 +261,7 @@ fn create_order(thread_id: usize, order_id: u64) -> OrderType<()> {
 
     // Create different order types based on the thread ID
     match thread_id % 4 {
-        0 => OrderType::Standard {
+        0 => Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(order_id),
                 price: 10000,
@@ -272,7 +272,7 @@ fn create_order(thread_id: usize, order_id: u64) -> OrderType<()> {
                 extra_fields: (),
             },
         },
-        1 => OrderType::IcebergOrder {
+        1 => Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(order_id),
                 price: 10000,
@@ -284,7 +284,7 @@ fn create_order(thread_id: usize, order_id: u64) -> OrderType<()> {
             },
             reserve_quantity: 15,
         },
-        2 => OrderType::PostOnly {
+        2 => Order::PostOnly {
             common: OrderCommon {
                 id: OrderId::from_u64(order_id),
                 price: 10000,
@@ -295,7 +295,7 @@ fn create_order(thread_id: usize, order_id: u64) -> OrderType<()> {
                 extra_fields: (),
             },
         },
-        _ => OrderType::ReserveOrder {
+        _ => Order::ReserveOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(order_id),
                 price: 10000,

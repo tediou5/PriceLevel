@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion};
 use pricelevel::{
-    OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+    OrderCommon, OrderId, Order, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
 };
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -244,8 +244,8 @@ fn measure_hot_spot_contention(
 
 /// Create a standard limit order for testing
 #[allow(dead_code)]
-fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
-    OrderType::Standard {
+fn create_standard_order(id: u64, price: u64, quantity: u64) -> Order<()> {
+    Order::Standard {
         common: OrderCommon {
             id: OrderId::from_u64(id),
             price,

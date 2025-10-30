@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{OrderCommon, OrderId, OrderType, OrderUpdate, PriceLevel, Side, TimeInForce};
+use pricelevel::{OrderCommon, OrderId, Order, OrderUpdate, PriceLevel, Side, TimeInForce};
 use std::hint::black_box;
 
 /// Register all benchmarks for updating orders at a price level
@@ -107,7 +107,7 @@ fn setup_standard_orders(order_count: u64) -> PriceLevel {
     let price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
-        let order = OrderType::Standard {
+        let order = Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,
@@ -129,7 +129,7 @@ fn setup_iceberg_orders(order_count: u64) -> PriceLevel {
     let price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
-        let order = OrderType::IcebergOrder {
+        let order = Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(i),
                 price: 10000,

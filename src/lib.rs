@@ -145,6 +145,6 @@ pub use errors::PriceLevelError;
 pub use execution::{MatchResult, Transaction};
 pub use order::DEFAULT_RESERVE_REPLENISH_AMOUNT;
 pub use order::PegReferenceType;
-pub use order::{OrderCommon, OrderId, OrderType, OrderUpdate, Side, TimeInForce};
+pub use order::{Order, OrderCommon, OrderId, OrderUpdate, Side, TimeInForce};
 pub use price_level::{OrderQueue, PriceLevel, PriceLevelData, PriceLevelSnapshot};
 pub use utils::{UuidGenerator, setup_logger};

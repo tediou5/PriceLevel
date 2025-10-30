@@ -4,7 +4,7 @@
    Date: 28/3/25
 ******************************************************************************/
 
-use pricelevel::{OrderCommon, OrderId, OrderType, PriceLevel, Side, TimeInForce};
+use pricelevel::{OrderCommon, OrderId, Order, PriceLevel, Side, TimeInForce};
 
 #[cfg(test)]
 mod integration_tests {
@@ -12,7 +12,7 @@ mod integration_tests {
 
     #[test]
     fn test_standard_order_creation() {
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 10000,
@@ -34,7 +34,7 @@ mod integration_tests {
 
     #[test]
     fn test_iceberg_order_creation() {
-        let order = OrderType::<()>::IcebergOrder {
+        let order = Order::<()>::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(2),
                 price: 10000,
@@ -58,7 +58,7 @@ mod integration_tests {
     fn test_price_level_basic_operations() {
         let price_level = PriceLevel::new(10000);
 
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(100),
                 price: 10000,
@@ -79,7 +79,7 @@ mod integration_tests {
 
     #[test]
     fn test_order_type_display() {
-        let order = OrderType::<()>::PostOnly {
+        let order = Order::<()>::PostOnly {
             common: OrderCommon {
                 id: OrderId::from_u64(3),
                 price: 9950,
@@ -99,7 +99,7 @@ mod integration_tests {
 
     #[test]
     fn test_order_time_properties() {
-        let order = OrderType::<()>::Standard {
+        let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(4),
                 price: 10050,

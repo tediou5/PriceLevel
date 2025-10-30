@@ -1,5 +1,5 @@
 use crate::errors::PriceLevelError;
-use crate::order::{OrderId, OrderType};
+use crate::order::{OrderId, Order};
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use serde::de::{SeqAccess, Visitor};
@@ -15,7 +15,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct OrderQueue {
     /// A map of order IDs to orders for quick lookups
-    orders: DashMap<OrderId, Arc<OrderType<()>>>,
+    orders: DashMap<OrderId, Arc<Order<()>>>,
     /// A queue of order IDs to maintain FIFO order
     order_ids: SegQueue<OrderId>,
 }
@@ -30,14 +30,14 @@ impl OrderQueue {
     }
 
     /// Add an order to the queue
-    pub fn push(&self, order: Arc<OrderType<()>>) {
+    pub fn push(&self, order: Arc<Order<()>>) {
         let order_id = order.id();
         self.orders.insert(order_id, order);
         self.order_ids.push(order_id);
     }
 
     /// Attempt to pop an order from the queue
-    pub fn pop(&self) -> Option<Arc<OrderType<()>>> {
+    pub fn pop(&self) -> Option<Arc<Order<()>>> {
         loop {
             if let Some(order_id) = self.order_ids.pop() {
                 // If the order was removed, pop will return None, but the ID was in the queue.
@@ -52,19 +52,19 @@ impl OrderQueue {
     }
 
     /// Search for an order with the given ID. O(1) operation.
-    pub fn find(&self, order_id: OrderId) -> Option<Arc<OrderType<()>>> {
+    pub fn find(&self, order_id: OrderId) -> Option<Arc<Order<()>>> {
         self.orders.get(&order_id).map(|o| o.value().clone())
     }
 
     /// Remove an order with the given ID
     /// Returns the removed order if found. O(1) for the map, but the ID remains in the queue.
-    pub fn remove(&self, order_id: OrderId) -> Option<Arc<OrderType<()>>> {
+    pub fn remove(&self, order_id: OrderId) -> Option<Arc<Order<()>>> {
         self.orders.remove(&order_id).map(|(_, order)| order)
     }
 
     /// Convert the queue to a vector (for snapshots)
-    pub fn to_vec(&self) -> Vec<Arc<OrderType<()>>> {
-        let mut orders: Vec<Arc<OrderType<()>>> =
+    pub fn to_vec(&self) -> Vec<Arc<Order<()>>> {
+        let mut orders: Vec<Arc<Order<()>>> =
             self.orders.iter().map(|o| o.value().clone()).collect();
         orders.sort_by_key(|o| o.timestamp());
         orders
@@ -86,7 +86,7 @@ impl OrderQueue {
     /// A new `OrderQueue` instance containing all the orders from the input vector.
     ///
     #[allow(dead_code)]
-    pub fn from_vec(orders: Vec<Arc<OrderType<()>>>) -> Self {
+    pub fn from_vec(orders: Vec<Arc<Order<()>>>) -> Self {
         let queue = OrderQueue::new();
         for order in orders {
             queue.push(order);
@@ -145,7 +145,7 @@ impl FromStr for OrderQueue {
         if !content.is_empty() {
             for order_str in content.split(',') {
                 let order =
-                    OrderType::from_str(order_str).map_err(|e| PriceLevelError::ParseError {
+                    Order::from_str(order_str).map_err(|e| PriceLevelError::ParseError {
                         message: format!("Order parse error: {e}"),
                     })?;
                 queue.push(Arc::new(order));
@@ -163,8 +163,8 @@ impl Display for OrderQueue {
     }
 }
 
-impl From<Vec<Arc<OrderType<()>>>> for OrderQueue {
-    fn from(orders: Vec<Arc<OrderType<()>>>) -> Self {
+impl From<Vec<Arc<Order<()>>>> for OrderQueue {
+    fn from(orders: Vec<Arc<Order<()>>>) -> Self {
         let queue = OrderQueue::new();
         for order in orders {
             queue.push(order);
@@ -200,7 +200,7 @@ impl<'de> Visitor<'de> for OrderQueueVisitor {
         let queue = OrderQueue::new();
 
         // Deserialize each order and add it to the queue
-        while let Some(order) = seq.next_element::<OrderType<()>>()? {
+        while let Some(order) = seq.next_element::<Order<()>>()? {
             queue.push(Arc::new(order));
         }
 
@@ -229,14 +229,14 @@ impl<'de> Deserialize<'de> for OrderQueue {
 
 #[cfg(test)]
 mod tests {
-    use crate::order::{OrderCommon, OrderId, OrderType, Side, TimeInForce};
+    use crate::order::{OrderCommon, OrderId, Order, Side, TimeInForce};
     use crate::price_level::order_queue::OrderQueue;
     use std::str::FromStr;
     use std::sync::Arc;
     use tracing::info;
 
-    fn create_test_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
-        OrderType::<()>::Standard {
+    fn create_test_order(id: u64, price: u64, quantity: u64) -> Order<()> {
+        Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
                 price,
@@ -423,7 +423,7 @@ mod tests {
         // Verify the order's details
         let order = &queue.to_vec()[0];
 
-        if let OrderType::<()>::Standard {
+        if let Order::<()>::Standard {
             common:
                 OrderCommon {
                     id,
@@ -454,8 +454,8 @@ mod tests {
 
     #[test]
     fn test_order_queue_serialization() {
-        fn create_standard_order(id: u64, price: u64, quantity: u64) -> OrderType<()> {
-            OrderType::Standard {
+        fn create_standard_order(id: u64, price: u64, quantity: u64) -> Order<()> {
+            Order::Standard {
                 common: OrderCommon {
                     id: OrderId::from_u64(id),
                     price,
@@ -488,7 +488,7 @@ mod tests {
 
         let deserialized_order = &deserialized.to_vec()[0];
 
-        if let OrderType::Standard {
+        if let Order::Standard {
             common:
                 OrderCommon {
                     id,
@@ -515,7 +515,7 @@ mod tests {
         assert!(queue.is_empty());
 
         // Add an order and check again
-        let order = OrderType::Standard {
+        let order = Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -536,7 +536,7 @@ mod tests {
         assert!(queue.is_empty());
 
         // Push the order back and then try a different approach to check emptiness
-        let order2 = OrderType::Standard {
+        let order2 = Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(2),
                 price: 1000,
@@ -555,7 +555,7 @@ mod tests {
     fn test_order_queue_from_vec() {
         // Test lines 170, 178
         // Create a vector of orders
-        let order1 = Arc::new(OrderType::Standard {
+        let order1 = Arc::new(Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -567,7 +567,7 @@ mod tests {
             },
         });
 
-        let order2 = Arc::new(OrderType::Standard {
+        let order2 = Arc::new(Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(2),
                 price: 1000,
@@ -594,7 +594,7 @@ mod tests {
         assert_eq!(queue_from_trait.to_vec().len(), 2);
 
         // Test the Into implementation
-        let orders_from_queue: Vec<Arc<OrderType<()>>> = queue.into();
+        let orders_from_queue: Vec<Arc<Order<()>>> = queue.into();
         assert_eq!(orders_from_queue.len(), 2);
         assert!(orders_from_queue.contains(&order1));
         assert!(orders_from_queue.contains(&order2));
@@ -647,7 +647,7 @@ mod tests {
         // Create a queue with orders
         let queue = OrderQueue::new();
 
-        let order1 = OrderType::Standard {
+        let order1 = Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
                 price: 1000,
@@ -659,7 +659,7 @@ mod tests {
             },
         };
 
-        let order2 = OrderType::IcebergOrder {
+        let order2 = Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(2),
                 price: 1000,
