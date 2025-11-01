@@ -4,12 +4,11 @@ mod status;
 mod time_in_force;
 mod update;
 
-use crate::OrderQueue;
 use crate::errors::PriceLevelError;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Arc;
+
 // Re-exports
 pub use base::{OrderId, Side};
 pub use pegged::PegReferenceType;
@@ -528,7 +527,9 @@ impl<T: Default> FromStr for Order<T> {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid order format".to_string(),
+            ));
         }
 
         let order_type = parts[0];
@@ -727,12 +728,6 @@ impl<T> fmt::Display for Order<T> {
                 )
             }
         }
-    }
-}
-
-impl From<OrderQueue> for Vec<Arc<Order<()>>> {
-    fn from(queue: OrderQueue) -> Self {
-        queue.to_vec()
     }
 }
 

@@ -3,15 +3,15 @@
 use crate::UuidGenerator;
 use crate::errors::PriceLevelError;
 use crate::execution::{MatchResult, Transaction};
-use crate::order::{OrderId, Order, OrderUpdate};
+use crate::order::{Order, OrderId, OrderUpdate};
 use crate::price_level::order_queue::OrderQueue;
 use crate::price_level::{PriceLevelSnapshot, PriceLevelSnapshotPackage, PriceLevelStatistics};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::str::FromStr;
-
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+use std::rc::Rc;
 
 /// A lock-free implementation of a price level in a limit order book
 #[derive(Debug)]
@@ -20,19 +20,19 @@ pub struct PriceLevel {
     price: u64,
 
     /// Total display quantity at this price level
-    display_quantity: AtomicU64,
+    display_quantity: u64,
 
     /// Total reserve quantity at this price level
-    reserve_quantity: AtomicU64,
+    reserve_quantity: u64,
 
     /// Number of orders at this price level
-    order_count: AtomicUsize,
+    order_count: usize,
 
     /// Queue of orders at this price level
     orders: OrderQueue,
 
     /// Statistics for this price level
-    stats: Arc<PriceLevelStatistics>,
+    stats: PriceLevelStatistics,
 }
 
 impl PriceLevel {
@@ -41,15 +41,23 @@ impl PriceLevel {
         snapshot.refresh_aggregates();
 
         let order_count = snapshot.orders.len();
-        let queue = OrderQueue::from(snapshot.orders.clone());
+        let rc_orders: Vec<Rc<Order<()>>> = snapshot
+            .orders
+            .into_iter()
+            .map(|arc_order| {
+                // Convert Arc to Rc by cloning the inner Order
+                Rc::new(*arc_order)
+            })
+            .collect();
+        let queue = OrderQueue::from(rc_orders);
 
         Ok(Self {
             price: snapshot.price,
-            display_quantity: AtomicU64::new(snapshot.display_quantity),
-            reserve_quantity: AtomicU64::new(snapshot.reserve_quantity),
-            order_count: AtomicUsize::new(order_count),
+            display_quantity: snapshot.display_quantity,
+            reserve_quantity: snapshot.reserve_quantity,
+            order_count,
             orders: queue,
-            stats: Arc::new(PriceLevelStatistics::new()),
+            stats: PriceLevelStatistics::new(),
         })
     }
 
@@ -66,18 +74,15 @@ impl PriceLevel {
         let package = PriceLevelSnapshotPackage::from_json(data)?;
         Self::from_snapshot_package(package)
     }
-}
-
-impl PriceLevel {
     /// Create a new price level
     pub fn new(price: u64) -> Self {
         Self {
             price,
-            display_quantity: AtomicU64::new(0),
-            reserve_quantity: AtomicU64::new(0),
-            order_count: AtomicUsize::new(0),
+            display_quantity: 0,
+            reserve_quantity: 0,
+            order_count: 0,
             orders: OrderQueue::new(),
-            stats: Arc::new(PriceLevelStatistics::new()),
+            stats: PriceLevelStatistics::new(),
         }
     }
 
@@ -88,54 +93,52 @@ impl PriceLevel {
 
     /// Get the display quantity
     pub fn display_quantity(&self) -> u64 {
-        self.display_quantity.load(Ordering::Acquire)
+        self.display_quantity
     }
 
     /// Get the reserve quantity
     pub fn reserve_quantity(&self) -> u64 {
-        self.reserve_quantity.load(Ordering::Acquire)
+        self.reserve_quantity
     }
 
     /// Get the total quantity (visible + hidden)
     pub fn total_quantity(&self) -> u64 {
-        self.display_quantity() + self.reserve_quantity()
+        self.display_quantity + self.reserve_quantity
     }
 
     /// Get the number of orders
     pub fn order_count(&self) -> usize {
-        self.order_count.load(Ordering::Acquire)
+        self.order_count
     }
 
     /// Get the statistics for this price level
-    pub fn stats(&self) -> Arc<PriceLevelStatistics> {
-        self.stats.clone()
+    pub fn stats(&self) -> &PriceLevelStatistics {
+        &self.stats
     }
 
     /// Add an order to this price level
-    pub fn add_order(&self, order: Order<()>) -> Arc<Order<()>> {
+    pub fn add_order(&mut self, order: Order<()>) -> Rc<Order<()>> {
         // Calculate quantities
         let visible_qty = order.display_quantity();
         let hidden_qty = order.reserve_quantity();
 
-        // Update atomic counters
-        self.display_quantity
-            .fetch_add(visible_qty, Ordering::AcqRel);
-        self.reserve_quantity
-            .fetch_add(hidden_qty, Ordering::AcqRel);
-        self.order_count.fetch_add(1, Ordering::AcqRel);
+        // Update counters
+        self.display_quantity += visible_qty;
+        self.reserve_quantity += hidden_qty;
+        self.order_count += 1;
 
         // Update statistics
         self.stats.record_order_added();
 
         // Add to order queue
-        let order_arc = Arc::new(order);
-        self.orders.push(order_arc.clone());
+        let order_rc = Rc::new(order);
+        self.orders.push(order_rc.clone());
 
-        order_arc
+        order_rc
     }
 
     /// Creates an iterator over the orders in the price level.
-    pub fn iter_orders(&self) -> Vec<Arc<Order<()>>> {
+    pub fn iter_orders(&self) -> Vec<Rc<Order<()>>> {
         self.orders.to_vec()
     }
 
@@ -160,7 +163,7 @@ impl PriceLevel {
     /// incoming order was completely filled, and a list of IDs of orders that were completely filled
     /// during the matching process.
     pub fn match_order(
-        &self,
+        &mut self,
         incoming_quantity: u64,
         taker_order_id: OrderId,
         transaction_id_generator: &UuidGenerator,
@@ -169,13 +172,13 @@ impl PriceLevel {
         let mut remaining = incoming_quantity;
 
         while remaining > 0 {
-            if let Some(order_arc) = self.orders.pop() {
+            if let Some(order_rc) = self.orders.pop() {
                 let (consumed, updated_order, hidden_reduced, new_remaining) =
-                    order_arc.match_against(remaining);
+                    order_rc.match_against(remaining);
 
                 if consumed > 0 {
                     // Update display quantity counter
-                    self.display_quantity.fetch_sub(consumed, Ordering::AcqRel);
+                    self.display_quantity -= consumed;
 
                     // Use UUID generator directly
                     let transaction_id = transaction_id_generator.next();
@@ -183,60 +186,59 @@ impl PriceLevel {
                     let transaction = Transaction::new(
                         transaction_id,
                         taker_order_id,
-                        order_arc.id(),
+                        order_rc.id(),
                         self.price,
                         consumed,
-                        order_arc.side().opposite(),
+                        order_rc.side().opposite(),
                     );
 
                     result.add_transaction(transaction);
 
                     // If the order was completely executed, add it to filled_order_ids
                     if updated_order.is_none() {
-                        result.add_filled_order_id(order_arc.id());
+                        result.add_filled_order_id(order_rc.id());
                     }
                 }
 
                 remaining = new_remaining;
 
+                // Calculate waiting time
+                let current_time = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let waiting_time = current_time.saturating_sub(order_rc.timestamp());
+
                 // update statistics
                 self.stats
-                    .record_execution(consumed, order_arc.price(), order_arc.timestamp());
+                    .record_execution(consumed, order_rc.price(), waiting_time);
 
                 if let Some(updated) = updated_order {
                     if hidden_reduced > 0 {
-                        self.reserve_quantity
-                            .fetch_sub(hidden_reduced, Ordering::AcqRel);
-                        self.display_quantity
-                            .fetch_add(hidden_reduced, Ordering::AcqRel);
+                        self.reserve_quantity -= hidden_reduced;
+                        self.display_quantity += hidden_reduced;
                     }
 
-                    self.orders.push(Arc::new(updated));
+                    self.orders.push(Rc::new(updated));
                 } else {
-                    self.order_count.fetch_sub(1, Ordering::AcqRel);
-                    match &*order_arc {
+                    self.order_count -= 1;
+                    match &*order_rc {
                         Order::IcebergOrder {
                             reserve_quantity, ..
                         } => {
                             if *reserve_quantity > 0 && hidden_reduced == 0 {
-                                self.reserve_quantity
-                                    .fetch_sub(*reserve_quantity, Ordering::AcqRel);
+                                self.reserve_quantity -= *reserve_quantity;
                             }
                         }
                         Order::ReserveOrder {
                             reserve_quantity, ..
                         } => {
                             if *reserve_quantity > 0 && hidden_reduced == 0 {
-                                self.reserve_quantity
-                                    .fetch_sub(*reserve_quantity, Ordering::AcqRel);
+                                self.reserve_quantity -= *reserve_quantity;
                             }
                         }
                         _ => {}
                     }
-                }
-
-                if remaining == 0 {
-                    break;
                 }
             } else {
                 break;
@@ -244,8 +246,6 @@ impl PriceLevel {
         }
 
         result.remaining_quantity = remaining;
-        result.is_complete = remaining == 0;
-
         result
     }
 
@@ -256,7 +256,11 @@ impl PriceLevel {
             display_quantity: self.display_quantity(),
             reserve_quantity: self.reserve_quantity(),
             order_count: self.order_count(),
-            orders: self.iter_orders(),
+            orders: self
+                .iter_orders()
+                .into_iter()
+                .map(|rc| Arc::new(*rc))
+                .collect(),
         }
     }
 
@@ -269,14 +273,12 @@ impl PriceLevel {
     pub fn snapshot_to_json(&self) -> Result<String, PriceLevelError> {
         self.snapshot_package()?.to_json()
     }
-}
 
-impl PriceLevel {
     /// Apply an update to an existing order at this price level
     pub fn update_order(
-        &self,
+        &mut self,
         update: OrderUpdate,
-    ) -> Result<Option<Arc<Order<()>>>, PriceLevelError> {
+    ) -> Result<Option<Rc<Order<()>>>, PriceLevelError> {
         match update {
             OrderUpdate::UpdatePrice {
                 order_id,
@@ -285,20 +287,17 @@ impl PriceLevel {
                 // If price changes, this order needs to be moved to a different price level
                 // So we remove it from this level and return it for re-insertion elsewhere
                 if new_price != self.price {
-                    let order = self.orders.remove(order_id);
+                    let order = self.orders.remove(&order_id);
 
-                    if let Some(ref order_arc) = order {
-                        // Update atomic counters
-                        let visible_qty = order_arc.display_quantity();
-                        let hidden_qty = order_arc.reserve_quantity();
+                    if let Some(ref order_rc) = order {
+                        // Update counters
+                        let old_visible = order_rc.display_quantity();
+                        let old_hidden = order_rc.reserve_quantity();
+                        self.display_quantity -= old_visible;
+                        self.reserve_quantity -= old_hidden;
+                        self.order_count -= 1;
 
-                        self.display_quantity
-                            .fetch_sub(visible_qty, Ordering::AcqRel);
-                        self.reserve_quantity
-                            .fetch_sub(hidden_qty, Ordering::AcqRel);
-                        self.order_count.fetch_sub(1, Ordering::AcqRel);
-
-                        // Update statistics
+                        // Record removal in statistics
                         self.stats.record_order_removed();
                     }
 
@@ -317,13 +316,13 @@ impl PriceLevel {
                 new_quantity,
             } => {
                 // Find the order
-                if let Some(order) = self.orders.find(order_id) {
+                if let Some(order) = self.orders.find(&order_id) {
                     // Get current quantities
                     let old_visible = order.display_quantity();
                     let old_hidden = order.reserve_quantity();
 
                     // Remove the old order
-                    let old_order = match self.orders.remove(order_id) {
+                    let old_order = match self.orders.remove(&order_id) {
                         Some(order) => order,
                         None => return Ok(None), // Order not found, remove by other thread
                     };
@@ -338,29 +337,25 @@ impl PriceLevel {
                     // Update atomic counters
                     if old_visible != new_visible {
                         if new_visible > old_visible {
-                            self.display_quantity
-                                .fetch_add(new_visible - old_visible, Ordering::AcqRel);
+                            self.display_quantity += new_visible - old_visible;
                         } else {
-                            self.display_quantity
-                                .fetch_sub(old_visible - new_visible, Ordering::AcqRel);
+                            self.display_quantity -= old_visible - new_visible;
                         }
                     }
 
                     if old_hidden != new_hidden {
                         if new_hidden > old_hidden {
-                            self.reserve_quantity
-                                .fetch_add(new_hidden - old_hidden, Ordering::AcqRel);
+                            self.reserve_quantity += new_hidden - old_hidden;
                         } else {
-                            self.reserve_quantity
-                                .fetch_sub(old_hidden - new_hidden, Ordering::AcqRel);
+                            self.reserve_quantity -= old_hidden - new_hidden;
                         }
                     }
 
                     // Add the updated order back to the queue
-                    let new_order_arc = Arc::new(new_order);
-                    self.orders.push(new_order_arc.clone());
+                    let new_order_rc = Rc::new(new_order);
+                    self.orders.push(new_order_rc.clone());
 
-                    return Ok(Some(new_order_arc));
+                    return Ok(Some(new_order_rc));
                 }
 
                 Ok(None) // Order not found
@@ -373,18 +368,16 @@ impl PriceLevel {
             } => {
                 // If price changes, remove the order and let the order book handle re-insertion
                 if new_price != self.price {
-                    let order = self.orders.remove(order_id);
+                    let order = self.orders.remove(&order_id);
 
                     if let Some(ref order_arc) = order {
                         // Update atomic counters
                         let visible_qty = order_arc.display_quantity();
                         let hidden_qty = order_arc.reserve_quantity();
 
-                        self.display_quantity
-                            .fetch_sub(visible_qty, Ordering::AcqRel);
-                        self.reserve_quantity
-                            .fetch_sub(hidden_qty, Ordering::AcqRel);
-                        self.order_count.fetch_sub(1, Ordering::AcqRel);
+                        self.display_quantity -= visible_qty;
+                        self.reserve_quantity -= hidden_qty;
+                        self.order_count -= 1;
 
                         // Update statistics
                         self.stats.record_order_removed();
@@ -401,20 +394,17 @@ impl PriceLevel {
 
             OrderUpdate::Cancel { order_id } => {
                 // Remove the order
-                let order = self.orders.remove(order_id);
+                let order = self.orders.remove(&order_id);
 
-                if let Some(ref order_arc) = order {
-                    // Update atomic counters
-                    let visible_qty = order_arc.display_quantity();
-                    let hidden_qty = order_arc.reserve_quantity();
+                if let Some(ref order_rc) = order {
+                    // Update counters
+                    let old_visible = order_rc.display_quantity();
+                    let old_hidden = order_rc.reserve_quantity();
+                    self.display_quantity -= old_visible;
+                    self.reserve_quantity -= old_hidden;
+                    self.order_count -= 1;
 
-                    self.display_quantity
-                        .fetch_sub(visible_qty, Ordering::AcqRel);
-                    self.reserve_quantity
-                        .fetch_sub(hidden_qty, Ordering::AcqRel);
-                    self.order_count.fetch_sub(1, Ordering::AcqRel);
-
-                    // Update statistics
+                    // Record removal in statistics
                     self.stats.record_order_removed();
                 }
 
@@ -430,20 +420,17 @@ impl PriceLevel {
                 // For replacement, check if the price is changing
                 if price != self.price {
                     // If price is different, remove the order and let order book handle re-insertion
-                    let order = self.orders.remove(order_id);
+                    let order = self.orders.remove(&order_id);
 
-                    if let Some(ref order_arc) = order {
-                        // Update atomic counters
-                        let visible_qty = order_arc.display_quantity();
-                        let hidden_qty = order_arc.reserve_quantity();
+                    if let Some(ref order_rc) = order {
+                        // Update counters
+                        let old_visible = order_rc.display_quantity();
+                        let old_hidden = order_rc.reserve_quantity();
+                        self.display_quantity -= old_visible;
+                        self.reserve_quantity -= old_hidden;
+                        self.order_count -= 1;
 
-                        self.display_quantity
-                            .fetch_sub(visible_qty, Ordering::AcqRel);
-                        self.reserve_quantity
-                            .fetch_sub(hidden_qty, Ordering::AcqRel);
-                        self.order_count.fetch_sub(1, Ordering::AcqRel);
-
-                        // Update statistics
+                        // Record removal in statistics
                         self.stats.record_order_removed();
                     }
 
@@ -492,20 +479,25 @@ impl From<&PriceLevel> for PriceLevelData {
 }
 
 impl From<&PriceLevelSnapshot> for PriceLevel {
-    fn from(value: &PriceLevelSnapshot) -> Self {
-        let mut snapshot = value.clone();
+    fn from(snapshot: &PriceLevelSnapshot) -> Self {
+        let mut snapshot = snapshot.clone();
         snapshot.refresh_aggregates();
 
-        let order_count = snapshot.orders.len();
-        let queue = OrderQueue::from(snapshot.orders.clone());
+        let rc_orders: Vec<Rc<Order<()>>> = snapshot
+            .orders
+            .into_iter()
+            .map(|arc| Rc::new(*arc))
+            .collect();
+        let queue = OrderQueue::from(rc_orders);
+        let order_count = queue.len();
 
         Self {
             price: snapshot.price,
-            display_quantity: AtomicU64::new(snapshot.display_quantity),
-            reserve_quantity: AtomicU64::new(snapshot.reserve_quantity),
-            order_count: AtomicUsize::new(order_count),
+            display_quantity: snapshot.display_quantity,
+            reserve_quantity: snapshot.reserve_quantity,
+            order_count,
             orders: queue,
-            stats: Arc::new(PriceLevelStatistics::new()),
+            stats: PriceLevelStatistics::new(),
         }
     }
 }
@@ -514,7 +506,7 @@ impl TryFrom<PriceLevelData> for PriceLevel {
     type Error = PriceLevelError;
 
     fn try_from(data: PriceLevelData) -> Result<Self, Self::Error> {
-        let price_level = PriceLevel::new(data.price);
+        let mut price_level = PriceLevel::new(data.price);
 
         // Add orders to the price level
         for order in data.orders {
@@ -586,7 +578,7 @@ impl FromStr for PriceLevel {
                 message: "Missing or invalid price".to_string(),
             })?;
 
-        let price_level = PriceLevel::new(price);
+        let mut price_level = PriceLevel::new(price);
 
         if let Some(orders_part) = parts.get("orders")
             && !orders_part.is_empty()
@@ -614,11 +606,10 @@ impl FromStr for PriceLevel {
 
             let order_str = &orders_part[last_split..];
             if !order_str.is_empty() {
-                let order = Order::<()>::from_str(order_str).map_err(|e| {
-                    PriceLevelError::ParseError {
+                let order =
+                    Order::<()>::from_str(order_str).map_err(|e| PriceLevelError::ParseError {
                         message: format!("Order parse error: {e}"),
-                    }
-                })?;
+                    })?;
                 price_level.add_order(order);
             }
         }
@@ -665,7 +656,7 @@ impl Display for PriceLevel {
         let orders_str: Vec<String> = self.iter_orders().iter().map(|o| o.to_string()).collect();
         write!(
             f,
-            "PriceLevel:price={};visible_quantity={};hidden_quantity={};order_count={};orders=[{}]",
+            "PriceLevel:price={};display_quantity={};reserve_quantity={};order_count={};orders=[{}]",
             self.price(),
             self.display_quantity(),
             self.reserve_quantity(),
@@ -679,23 +670,23 @@ impl Display for PriceLevel {
 mod tests {
     use crate::errors::PriceLevelError;
     use crate::order::{
-        OrderCommon, OrderId, Order, OrderUpdate, PegReferenceType, Side, TimeInForce,
+        Order, OrderCommon, OrderId, OrderUpdate, PegReferenceType, Side, TimeInForce,
     };
     use crate::price_level::level::{PriceLevel, PriceLevelData};
     use crate::price_level::snapshot::SNAPSHOT_FORMAT_VERSION;
     use crate::{DEFAULT_RESERVE_REPLENISH_AMOUNT, UuidGenerator};
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use tracing::error;
     use uuid::Uuid;
 
     // Shared timestamp counter for all order creation functions to ensure proper ordering
-    static TIMESTAMP_COUNTER: AtomicU64 = AtomicU64::new(1616823000000);
+    static TIMESTAMP_COUNTER: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(1616823000000);
 
     // Helper functions to create different order types for testing
     pub fn create_standard_order(id: u64, price: u64, quantity: u64) -> Order<()> {
         let order_id = OrderId::from_u64(id);
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::Standard {
             common: OrderCommon {
                 id: order_id,
@@ -711,7 +702,7 @@ mod tests {
 
     #[test]
     fn test_price_level_snapshot_roundtrip() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         price_level.add_order(create_standard_order(1, 10000, 100));
         price_level.add_order(create_iceberg_order(2, 10000, 50, 200));
 
@@ -748,7 +739,7 @@ mod tests {
 
     #[test]
     fn test_price_level_snapshot_checksum_failure() {
-        let price_level = PriceLevel::new(20000);
+        let mut price_level = PriceLevel::new(20000);
         price_level.add_order(create_standard_order(1, 20000, 100));
 
         let mut package = price_level
@@ -767,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_price_level_from_snapshot_preserves_order_positions() {
-        let price_level = PriceLevel::new(15000);
+        let mut price_level = PriceLevel::new(15000);
         price_level.add_order(create_standard_order(1, 15000, 100));
         price_level.add_order(create_iceberg_order(2, 15000, 40, 120));
         price_level.add_order(create_post_only_order(3, 15000, 60));
@@ -800,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_price_level_from_snapshot_package_preserves_order_positions() {
-        let price_level = PriceLevel::new(17500);
+        let mut price_level = PriceLevel::new(17500);
         price_level.add_order(create_standard_order(10, 17500, 80));
         price_level.add_order(create_trailing_stop_order(11, 17500, 50));
         price_level.add_order(create_pegged_order(12, 17500, 40));
@@ -833,7 +824,7 @@ mod tests {
     }
 
     fn create_iceberg_order(id: u64, price: u64, visible: u64, hidden: u64) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::IcebergOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -849,7 +840,7 @@ mod tests {
     }
 
     fn create_post_only_order(id: u64, price: u64, quantity: u64) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::PostOnly {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -864,7 +855,7 @@ mod tests {
     }
 
     fn create_trailing_stop_order(id: u64, price: u64, quantity: u64) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::TrailingStop {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -881,7 +872,7 @@ mod tests {
     }
 
     fn create_pegged_order(id: u64, price: u64, quantity: u64) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::PeggedOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -898,7 +889,7 @@ mod tests {
     }
 
     fn create_market_to_limit_order(id: u64, price: u64, quantity: u64) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::MarketToLimit {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -921,7 +912,7 @@ mod tests {
         auto_replenish: bool,
         replenish_amount: Option<u64>,
     ) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::ReserveOrder {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -940,7 +931,7 @@ mod tests {
     }
 
     fn create_fill_or_kill_order(id: u64, price: u64, quantity: u64) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -955,7 +946,7 @@ mod tests {
     }
 
     fn create_immediate_or_cancel_order(id: u64, price: u64, quantity: u64) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -969,13 +960,8 @@ mod tests {
         }
     }
 
-    fn create_good_till_date_order(
-        id: u64,
-        price: u64,
-        quantity: u64,
-        expiry: u64,
-    ) -> Order<()> {
-        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+    fn create_good_till_date_order(id: u64, price: u64, quantity: u64, expiry: u64) -> Order<()> {
+        let timestamp = TIMESTAMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Order::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(id),
@@ -1008,7 +994,7 @@ mod tests {
 
     #[test]
     fn test_add_standard_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let order = create_standard_order(1, 10000, 100);
 
         let order_arc = price_level.add_order(order);
@@ -1029,7 +1015,7 @@ mod tests {
 
     #[test]
     fn test_add_iceberg_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let order = create_iceberg_order(2, 10000, 50, 200);
 
         price_level.add_order(order);
@@ -1042,7 +1028,7 @@ mod tests {
 
     #[test]
     fn test_add_multiple_orders() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add different order types
         price_level.add_order(create_standard_order(1, 10000, 100));
@@ -1061,7 +1047,7 @@ mod tests {
 
     #[test]
     fn test_update_order_cancel() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         price_level.add_order(create_standard_order(1, 10000, 100));
         price_level.add_order(create_iceberg_order(2, 10000, 50, 200));
@@ -1106,7 +1092,7 @@ mod tests {
 
     #[test]
     fn test_iter_orders() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         price_level.add_order(create_standard_order(1, 10000, 100));
         price_level.add_order(create_iceberg_order(2, 10000, 50, 200));
@@ -1123,7 +1109,7 @@ mod tests {
 
     #[test]
     fn test_match_standard_order_full() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1158,7 +1144,7 @@ mod tests {
 
     #[test]
     fn test_match_standard_order_partial() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1194,7 +1180,7 @@ mod tests {
 
     #[test]
     fn test_match_standard_order_excess() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1229,7 +1215,7 @@ mod tests {
     /// and how transactions are generated.  It also checks the state of the `PriceLevel`
     /// after each match, including visible/hidden quantities and the number of orders.
     fn test_match_iceberg_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1289,7 +1275,7 @@ mod tests {
 
     #[test]
     fn test_match_iceberg_order_overlapping() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1351,7 +1337,7 @@ mod tests {
 
     #[test]
     fn test_match_iceberg_order_partial_visible() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1375,7 +1361,7 @@ mod tests {
     /// When the visible quantity is consumed completely, the order should be removed
     /// from the price level even if there is remaining hidden quantity.
     fn test_match_reserve_order_no_auto_replenish() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1399,7 +1385,7 @@ mod tests {
     /// When the visible quantity is fully consumed, the order should automatically
     /// replenish from the hidden quantity.
     fn test_match_reserve_order_with_auto_replenish() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1429,7 +1415,7 @@ mod tests {
     /// Verifies that the visible quantity decreases correctly and there is no automatic
     /// replenishment even when falling below the threshold.
     fn test_match_reserve_order_partial_no_replenish() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1461,7 +1447,7 @@ mod tests {
     /// When the visible quantity is fully consumed, the order should replenish
     /// using the specified custom amount rather than the default.
     fn test_match_reserve_order_with_custom_replenish_amount() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1494,7 +1480,7 @@ mod tests {
     /// A threshold of 0 is treated as 1, but no replenishment should occur
     /// when visible quantity equals the threshold.
     fn test_match_reserve_order_with_zero_threshold() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1517,7 +1503,7 @@ mod tests {
     /// Tests a Reserve Order with threshold 0 and auto-replenish disabled.
     /// The order should be removed from the book when visible quantity reaches 0.
     fn test_match_reserve_order_threshold_zero() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1540,7 +1526,7 @@ mod tests {
     /// Tests a Reserve Order with threshold 1 and auto-replenish disabled.
     /// The order should be removed from the book when visible quantity reaches 0.
     fn test_match_reserve_order_threshold_one() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1563,7 +1549,7 @@ mod tests {
     /// Tests a Reserve Order with a specific threshold and auto-replenish disabled.
     /// Verifies behavior when matching above and below the threshold.
     fn test_match_reserve_order_with_threshold() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1597,7 +1583,7 @@ mod tests {
     /// 3. Matching with an amount larger than available
     ///    This test verifies correct transaction generation and order state throughout.
     fn test_match_reserve_order_overlapping() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1679,7 +1665,7 @@ mod tests {
 
     #[test]
     fn test_match_post_only_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1697,7 +1683,7 @@ mod tests {
 
     #[test]
     fn test_match_trailing_stop_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1715,7 +1701,7 @@ mod tests {
 
     #[test]
     fn test_match_pegged_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1733,7 +1719,7 @@ mod tests {
 
     #[test]
     fn test_match_market_to_limit_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1751,7 +1737,7 @@ mod tests {
 
     #[test]
     fn test_match_fill_or_kill_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1769,7 +1755,7 @@ mod tests {
 
     #[test]
     fn test_match_immediate_or_cancel_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1787,7 +1773,7 @@ mod tests {
 
     #[test]
     fn test_match_good_till_date_order() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1805,7 +1791,7 @@ mod tests {
 
     #[test]
     fn test_match_multiple_orders() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -1862,7 +1848,7 @@ mod tests {
 
     #[test]
     fn test_snapshot() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add some orders
         price_level.add_order(create_standard_order(1, 10000, 100));
@@ -1891,7 +1877,7 @@ mod tests {
 
     #[test]
     fn test_update_order_update_price() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         let order = create_standard_order(1, 10000, 100);
@@ -1934,7 +1920,7 @@ mod tests {
 
     #[test]
     fn test_update_order_update_quantity() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         let order = create_standard_order(1, 10000, 100);
@@ -1989,7 +1975,7 @@ mod tests {
 
     #[test]
     fn test_update_order_update_price_and_quantity() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         let order = create_standard_order(1, 10000, 100);
@@ -2039,7 +2025,7 @@ mod tests {
 
     #[test]
     fn test_update_order_replace() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         let order = create_standard_order(1, 10000, 100);
@@ -2092,7 +2078,7 @@ mod tests {
     // Test the From<&PriceLevel> implementation for PriceLevelData
     #[test]
     fn test_price_level_data_from_price_level() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add some orders
         price_level.add_order(create_standard_order(1, 10000, 100));
@@ -2153,7 +2139,7 @@ mod tests {
     // Test Display implementation for PriceLevel
     #[test]
     fn test_price_level_display() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         price_level.add_order(create_standard_order(1, 10000, 100));
 
         let display_str = format!("{price_level}");
@@ -2170,7 +2156,7 @@ mod tests {
     // Test FromStr implementation for PriceLevel
     #[test]
     fn test_price_level_from_str() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         price_level.add_order(create_standard_order(1, 10000, 50));
         price_level.add_order(create_standard_order(2, 10000, 75));
         price_level.add_order(create_good_till_date_order(3, 10000, 100, 1617000000000));
@@ -2205,7 +2191,7 @@ mod tests {
     // Test serialization and deserialization for PriceLevel
     #[test]
     fn test_price_level_serde() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         price_level.add_order(create_standard_order(1, 10000, 100));
 
         // Serialize to JSON
@@ -2213,8 +2199,8 @@ mod tests {
 
         // Verify the JSON structure
         assert!(serialized.contains("\"price\":10000"));
-        assert!(serialized.contains("\"visible_quantity\":100"));
-        assert!(serialized.contains("\"hidden_quantity\":0"));
+        assert!(serialized.contains("\"display_quantity\":100"));
+        assert!(serialized.contains("\"reserve_quantity\":0"));
         assert!(serialized.contains("\"order_count\":1"));
         assert!(serialized.contains("\"orders\":"));
 
@@ -2239,7 +2225,7 @@ mod tests {
 
     #[test]
     fn test_level_partial_match_remaining() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -2258,7 +2244,7 @@ mod tests {
 
     #[test]
     fn test_level_update_price_different_price() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         price_level.add_order(create_standard_order(1, 10000, 100));
@@ -2277,7 +2263,7 @@ mod tests {
 
     #[test]
     fn test_level_update_price_and_quantity_same_price() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         price_level.add_order(create_standard_order(1, 10000, 100));
@@ -2298,7 +2284,7 @@ mod tests {
 
     #[test]
     fn test_serialize_deserialize_with_orders() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add some orders
         price_level.add_order(create_standard_order(1, 10000, 100));
@@ -2326,7 +2312,7 @@ mod tests {
     #[test]
     fn test_price_level_update_price_same_value() {
         // Test lines 187-188
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         let order = Order::<()>::Standard {
             common: OrderCommon {
                 id: OrderId::from_u64(1),
@@ -2360,7 +2346,7 @@ mod tests {
     #[test]
     fn test_price_level_update_quantity_order_not_found() {
         // Test line 282
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
         // No orders added
 
         // Try to update quantity of a non-existent order
@@ -2378,7 +2364,7 @@ mod tests {
     #[test]
     fn test_price_level_update_quantity_by_another_thread() {
         // Test lines 304-306, 308-309
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         let order = Order::<()>::Standard {
@@ -2425,7 +2411,7 @@ mod tests {
     #[test]
     fn test_price_level_update_quantity_increase() {
         // Test line 473
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         let order = Order::<()>::Standard {
@@ -2458,7 +2444,7 @@ mod tests {
     #[test]
     fn test_price_level_update_reserve_quantity() {
         // Test lines 488, 498
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an iceberg order with visible and hidden quantities
         let order = Order::IcebergOrder {
@@ -2508,7 +2494,7 @@ mod tests {
     #[test]
     fn test_price_level_update_price_and_quantity_same_price() {
         // Test line 510
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add an order
         let order = Order::<()>::Standard {
@@ -2545,7 +2531,7 @@ mod tests {
         // Test lines 521-523, 527, 537, 558-560, 562-564, 566-568, 607
 
         // Create a price level
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         // Add some orders
         let order1 = Order::<()>::Standard {
@@ -2599,15 +2585,15 @@ mod tests {
         // Test display implementation
         let display_string = price_level.to_string();
         assert!(display_string.starts_with("PriceLevel:price=10000;"));
-        assert!(display_string.contains("visible_quantity=80"));
-        assert!(display_string.contains("hidden_quantity=70"));
+        assert!(display_string.contains("display_quantity=80"));
+        assert!(display_string.contains("reserve_quantity=70"));
         assert!(display_string.contains("order_count=2"));
 
         // Test serialization
         let serialized = serde_json::to_string(&price_level).unwrap();
         assert!(serialized.contains("\"price\":10000"));
-        assert!(serialized.contains("\"visible_quantity\":80"));
-        assert!(serialized.contains("\"hidden_quantity\":70"));
+        assert!(serialized.contains("\"display_quantity\":80"));
+        assert!(serialized.contains("\"reserve_quantity\":70"));
         assert!(serialized.contains("\"order_count\":2"));
 
         // Test deserialization

@@ -1,15 +1,16 @@
 use crate::errors::PriceLevelError;
 use crate::price_level::level::PriceLevel;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::Arc;
 
 /// Represents a price level entry in the order book
 #[derive(Debug)]
 pub struct OrderBookEntry {
     /// The price level
-    pub level: Arc<PriceLevel>,
+    pub level: Rc<RefCell<PriceLevel>>,
 
     /// Index or position in the order book
     pub index: usize,
@@ -18,29 +19,29 @@ pub struct OrderBookEntry {
 impl OrderBookEntry {
     /// Create a new order book entry
     #[allow(dead_code)]
-    pub fn new(level: Arc<PriceLevel>, index: usize) -> Self {
+    pub fn new(level: Rc<RefCell<PriceLevel>>, index: usize) -> Self {
         Self { level, index }
     }
 
     /// Get the price of this entry
     pub fn price(&self) -> u64 {
-        self.level.price()
+        self.level.borrow().price()
     }
 
     /// Get the visible quantity at this entry
     pub fn visible_quantity(&self) -> u64 {
-        self.level.display_quantity()
+        self.level.borrow().display_quantity()
     }
 
     /// Get the total quantity at this entry
     pub fn total_quantity(&self) -> u64 {
-        self.level.total_quantity()
+        self.level.borrow().total_quantity()
     }
 
     /// Get the order count at this entry
     #[allow(dead_code)]
     pub fn order_count(&self) -> usize {
-        self.level.order_count()
+        self.level.borrow().order_count()
     }
 }
 
@@ -97,7 +98,7 @@ impl<'de> Deserialize<'de> for OrderBookEntry {
 
         // Note: This might require modifying the constructor
         // You may need to add a method to PriceLevel that allows creating from price
-        let level = Arc::new(PriceLevel::new(wrapper.price));
+        let level = Rc::new(RefCell::new(PriceLevel::new(wrapper.price)));
 
         Ok(OrderBookEntry {
             level,
@@ -127,7 +128,9 @@ impl FromStr for OrderBookEntry {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 || parts[0] != "OrderBookEntry" {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid order book entry format".to_string(),
+            ));
         }
 
         let mut fields = std::collections::HashMap::new();
@@ -170,7 +173,7 @@ impl FromStr for OrderBookEntry {
         let index = parse_usize("index", index_str)?;
 
         // Create a new price level with the given price
-        let level = Arc::new(PriceLevel::new(price));
+        let level = Rc::new(RefCell::new(PriceLevel::new(price)));
 
         Ok(OrderBookEntry { level, index })
     }
@@ -178,16 +181,17 @@ impl FromStr for OrderBookEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::order::{OrderCommon, OrderId, Order, Side, TimeInForce};
+    use crate::order::{Order, OrderCommon, OrderId, Side, TimeInForce};
     use crate::price_level::entry::OrderBookEntry;
     use crate::price_level::level::PriceLevel;
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use std::str::FromStr;
-    use std::sync::Arc;
     use tracing::info;
 
     #[test]
     fn test_display() {
-        let level = Arc::new(PriceLevel::new(1000));
+        let level = Rc::new(RefCell::new(PriceLevel::new(1000)));
         let entry = OrderBookEntry::new(level.clone(), 5);
 
         let display_str = entry.to_string();
@@ -209,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_display_parse() {
-        let level = Arc::new(PriceLevel::new(1000));
+        let level = Rc::new(RefCell::new(PriceLevel::new(1000)));
         let original = OrderBookEntry::new(level.clone(), 5);
 
         let string_rep = original.to_string();
@@ -223,7 +227,7 @@ mod tests {
     fn test_serialization() {
         use serde_json;
 
-        let level = Arc::new(PriceLevel::new(1000));
+        let level = Rc::new(RefCell::new(PriceLevel::new(1000)));
         let entry = OrderBookEntry::new(level.clone(), 5);
 
         let serialized = serde_json::to_string(&entry).unwrap();
@@ -247,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_order_book_entry_json_serialization() {
-        let level = Arc::new(PriceLevel::new(10000));
+        let level = Rc::new(RefCell::new(PriceLevel::new(10000)));
         let entry = OrderBookEntry::new(level, 5);
 
         // Serialize to JSON
@@ -279,8 +283,8 @@ mod tests {
     #[test]
     fn test_order_book_entry_equality_hash() {
         // Test line 76 - Testing Eq trait implementation
-        let level1 = Arc::new(PriceLevel::new(1000));
-        let level2 = Arc::new(PriceLevel::new(1000));
+        let level1 = Rc::new(RefCell::new(PriceLevel::new(1000)));
+        let level2 = Rc::new(RefCell::new(PriceLevel::new(1000)));
 
         let entry1 = OrderBookEntry::new(level1.clone(), 1);
         let entry2 = OrderBookEntry::new(level2.clone(), 2);
@@ -297,7 +301,7 @@ mod tests {
     #[test]
     fn test_order_book_entry_serialization() {
         // Test lines 100, 102-104 - Serialize implementation
-        let level = Arc::new(PriceLevel::new(1000));
+        let level = Rc::new(RefCell::new(PriceLevel::new(1000)));
         let entry = OrderBookEntry::new(level.clone(), 5);
 
         // Add an order to make the test more meaningful
@@ -312,7 +316,7 @@ mod tests {
                 extra_fields: (),
             },
         };
-        level.add_order(order);
+        level.borrow_mut().add_order(order);
 
         // Serialize the entry
         let json = serde_json::to_string(&entry).unwrap();
@@ -372,12 +376,13 @@ mod tests {
 mod tests_order_book_entry {
     use crate::price_level::entry::OrderBookEntry;
     use crate::price_level::level::PriceLevel;
+    use std::cell::RefCell;
     use std::cmp::Ordering;
-    use std::sync::Arc;
+    use std::rc::Rc;
 
     /// Create a test OrderBookEntry with specified price and index
     fn create_test_entry(price: u64, index: usize) -> OrderBookEntry {
-        let level = Arc::new(PriceLevel::new(price));
+        let level = Rc::new(RefCell::new(PriceLevel::new(price)));
         OrderBookEntry::new(level, index)
     }
 
@@ -385,7 +390,7 @@ mod tests_order_book_entry {
     /// Test the order_count method returns the correct count
     fn test_order_count() {
         // Create two price levels with different characteristics
-        let level1 = Arc::new(PriceLevel::new(1000));
+        let level1 = Rc::new(RefCell::new(PriceLevel::new(1000)));
         let entry1 = OrderBookEntry::new(level1.clone(), 5);
 
         // Initially should have zero orders
@@ -404,7 +409,7 @@ mod tests_order_book_entry {
             },
         };
 
-        level1.add_order(order_type);
+        level1.borrow_mut().add_order(order_type);
         assert_eq!(entry1.order_count(), 1);
 
         // Add another order
@@ -421,7 +426,7 @@ mod tests_order_book_entry {
             },
         };
 
-        level1.add_order(order_type3);
+        level1.borrow_mut().add_order(order_type3);
         assert_eq!(entry1.order_count(), 2);
     }
 
@@ -534,7 +539,10 @@ mod tests_order_book_entry {
     #[test]
     /// Test that visible_quantity and total_quantity are correctly delegated to PriceLevel
     fn test_quantity_methods() {
-        let level = Arc::new(PriceLevel::new(1000));
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let level = Rc::new(RefCell::new(PriceLevel::new(1000)));
         let entry = OrderBookEntry::new(level.clone(), 5);
 
         // Initially quantities should be zero
@@ -553,7 +561,7 @@ mod tests_order_book_entry {
                 extra_fields: (),
             },
         };
-        level.add_order(standard_order);
+        level.borrow_mut().add_order(standard_order);
 
         // Check quantities after adding order
         assert_eq!(entry.visible_quantity(), 10);
@@ -572,7 +580,7 @@ mod tests_order_book_entry {
             },
             reserve_quantity: 15,
         };
-        level.add_order(iceberg_order);
+        level.borrow_mut().add_order(iceberg_order);
 
         // Check quantities after adding iceberg order
         assert_eq!(entry.visible_quantity(), 15); // 10 + 5
@@ -584,7 +592,8 @@ mod tests_order_book_entry {
 mod tests_order_book_entry_deserialize {
     use crate::price_level::entry::OrderBookEntry;
     use crate::price_level::level::PriceLevel;
-    use std::sync::Arc;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     #[test]
     /// Test deserialization from JSON with minimum fields
@@ -682,7 +691,7 @@ mod tests_order_book_entry_deserialize {
         assert_eq!(wrapper.index, 5);
 
         // Create an OrderBookEntry from the wrapper manually
-        let level = Arc::new(PriceLevel::new(wrapper.price));
+        let level = Rc::new(RefCell::new(PriceLevel::new(wrapper.price)));
         let entry = OrderBookEntry::new(level, wrapper.index);
 
         assert_eq!(entry.price(), 1000);
@@ -714,7 +723,7 @@ mod tests_order_book_entry_deserialize {
     /// Test round-trip serialization and deserialization
     fn test_serde_round_trip() {
         // Create an original entry
-        let original_level = Arc::new(PriceLevel::new(1500));
+        let original_level = Rc::new(RefCell::new(PriceLevel::new(1500)));
         let original_entry = OrderBookEntry::new(original_level, 25);
 
         // Serialize to JSON

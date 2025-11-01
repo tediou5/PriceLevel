@@ -93,7 +93,9 @@ impl FromStr for Transaction {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 || parts[0] != "Transaction" {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid transaction format".to_string(),
+            ));
         }
 
         let fields_str = parts[1];

@@ -1,6 +1,6 @@
 use criterion::Criterion;
 use pricelevel::{
-    OrderCommon, OrderId, Order, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
+    Order, OrderCommon, OrderId, OrderUpdate, PriceLevel, Side, TimeInForce, UuidGenerator,
 };
 use std::hint::black_box;
 use uuid::Uuid;
@@ -12,7 +12,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark a realistic trading scenario with mixed operations
     group.bench_function("realistic_trading_scenario", |b| {
         b.iter(|| {
-            let price_level = PriceLevel::new(10000);
+            let mut price_level = PriceLevel::new(10000);
             let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
             let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -73,7 +73,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark high-frequency trading scenario (many small matches)
     group.bench_function("high_frequency_scenario", |b| {
         b.iter(|| {
-            let price_level = PriceLevel::new(10000);
+            let mut price_level = PriceLevel::new(10000);
             let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
             let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -109,7 +109,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark large order throughput
     group.bench_function("large_order_throughput", |b| {
         b.iter(|| {
-            let price_level = PriceLevel::new(10000);
+            let mut price_level = PriceLevel::new(10000);
             let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
             let transaction_id_generator = UuidGenerator::new(namespace);
 
@@ -215,7 +215,7 @@ fn create_reserve_order(
 
 /// Set up a price level with mixed order types
 fn setup_mixed_orders(order_count: u64) -> PriceLevel {
-    let price_level = PriceLevel::new(10000);
+    let mut price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
         let order = match i % 3 {

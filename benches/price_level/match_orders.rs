@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{OrderCommon, OrderId, Order, PriceLevel, Side, TimeInForce, UuidGenerator};
+use pricelevel::{Order, OrderCommon, OrderId, PriceLevel, Side, TimeInForce, UuidGenerator};
 use std::hint::black_box;
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark matching against standard orders
     group.bench_function("match_standard_orders", |b| {
         b.iter(|| {
-            let price_level = setup_standard_orders(100);
+            let mut price_level = setup_standard_orders(100);
             let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
             let transaction_id_generator = UuidGenerator::new(namespace);
             black_box(price_level.match_order(
@@ -25,7 +25,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark matching against iceberg orders
     group.bench_function("match_iceberg_orders", |b| {
         b.iter(|| {
-            let price_level = setup_iceberg_orders(100);
+            let mut price_level = setup_iceberg_orders(100);
             let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
             let transaction_id_generator = UuidGenerator::new(namespace);
             black_box(price_level.match_order(
@@ -39,7 +39,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark matching against reserve orders
     group.bench_function("match_reserve_orders", |b| {
         b.iter(|| {
-            let price_level = setup_reserve_orders(100);
+            let mut price_level = setup_reserve_orders(100);
             let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
             let transaction_id_generator = UuidGenerator::new(namespace);
             black_box(price_level.match_order(
@@ -53,7 +53,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark matching against mixed order types
     group.bench_function("match_mixed_orders", |b| {
         b.iter(|| {
-            let price_level = setup_mixed_orders(100);
+            let mut price_level = setup_mixed_orders(100);
             let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
             let transaction_id_generator = UuidGenerator::new(namespace);
             black_box(price_level.match_order(
@@ -71,7 +71,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
             match_quantity,
             |b, &match_quantity| {
                 b.iter(|| {
-                    let price_level = setup_standard_orders(50);
+                    let mut price_level = setup_standard_orders(50);
                     let namespace =
                         Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
                     let transaction_id_generator = UuidGenerator::new(namespace);
@@ -92,7 +92,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
             match_quantity,
             |b, &match_quantity| {
                 b.iter(|| {
-                    let price_level = setup_iceberg_orders(25);
+                    let mut price_level = setup_iceberg_orders(25);
                     let namespace =
                         Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
                     let transaction_id_generator = UuidGenerator::new(namespace);
@@ -113,7 +113,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
 
 /// Set up a price level with standard orders
 fn setup_standard_orders(order_count: u64) -> PriceLevel {
-    let price_level = PriceLevel::new(10000);
+    let mut price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
         let order = Order::Standard {
@@ -135,7 +135,7 @@ fn setup_standard_orders(order_count: u64) -> PriceLevel {
 
 /// Set up a price level with iceberg orders
 fn setup_iceberg_orders(order_count: u64) -> PriceLevel {
-    let price_level = PriceLevel::new(10000);
+    let mut price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
         let order = Order::IcebergOrder {
@@ -158,7 +158,7 @@ fn setup_iceberg_orders(order_count: u64) -> PriceLevel {
 
 /// Set up a price level with reserve orders
 fn setup_reserve_orders(order_count: u64) -> PriceLevel {
-    let price_level = PriceLevel::new(10000);
+    let mut price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
         let order = Order::ReserveOrder {
@@ -184,7 +184,7 @@ fn setup_reserve_orders(order_count: u64) -> PriceLevel {
 
 /// Set up a price level with mixed order types
 fn setup_mixed_orders(order_count: u64) -> PriceLevel {
-    let price_level = PriceLevel::new(10000);
+    let mut price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
         let order = match i % 3 {

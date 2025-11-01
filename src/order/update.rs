@@ -57,7 +57,9 @@ impl FromStr for OrderUpdate {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid order update format".to_string(),
+            ));
         }
 
         let update_type = parts[0];
@@ -321,7 +323,7 @@ mod tests_order_update {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            PriceLevelError::InvalidFormat => {}
+            PriceLevelError::InvalidFormat(_) => {}
             err => panic!("Expected InvalidFormat error, got {err:?}"),
         }
     }

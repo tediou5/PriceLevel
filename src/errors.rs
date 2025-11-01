@@ -31,7 +31,7 @@ pub enum PriceLevelError {
     ///
     /// This is a general error for when the input data doesn't conform to expected patterns
     /// but doesn't fit into more specific error categories.
-    InvalidFormat,
+    InvalidFormat(String),
 
     /// Error indicating an unrecognized order type was provided.
     ///
@@ -87,7 +87,7 @@ impl Display for PriceLevelError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             PriceLevelError::ParseError { message } => write!(f, "{message}"),
-            PriceLevelError::InvalidFormat => write!(f, "Invalid format"),
+            PriceLevelError::InvalidFormat(msg) => write!(f, "Invalid format: {}", msg),
             PriceLevelError::UnknownOrderType(order_type) => {
                 write!(f, "Unknown order type: {order_type}")
             }
@@ -115,7 +115,7 @@ impl Debug for PriceLevelError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             PriceLevelError::ParseError { message } => write!(f, "{message}"),
-            PriceLevelError::InvalidFormat => write!(f, "Invalid format"),
+            PriceLevelError::InvalidFormat(msg) => write!(f, "Invalid format: {}", msg),
             PriceLevelError::UnknownOrderType(order_type) => {
                 write!(f, "Unknown order type: {order_type}")
             }
@@ -156,8 +156,8 @@ mod tests {
 
     #[test]
     fn test_invalid_format_display() {
-        let error = PriceLevelError::InvalidFormat;
-        assert_eq!(error.to_string(), "Invalid format");
+        let error = PriceLevelError::InvalidFormat("test message".to_string());
+        assert_eq!(error.to_string(), "Invalid format: test message");
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
             PriceLevelError::ParseError {
                 message: "Debug test".to_string(),
             },
-            PriceLevelError::InvalidFormat,
+            PriceLevelError::InvalidFormat("Debug test".to_string()),
             PriceLevelError::UnknownOrderType("TestOrder".to_string()),
             PriceLevelError::MissingField("id".to_string()),
             PriceLevelError::InvalidFieldValue {
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn test_implements_error_trait() {
         // Test that our error type implements the standard Error trait
-        let error = PriceLevelError::InvalidFormat;
+        let error = PriceLevelError::InvalidFormat("test".to_string());
         let _: &dyn Error = &error;
 
         // If this compiles, the test passes since it confirms
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn test_error_source() {
         // Test that source() returns None as we don't have nested errors
-        let error = PriceLevelError::InvalidFormat;
+        let error = PriceLevelError::InvalidFormat("test".to_string());
         assert!(error.source().is_none());
     }
 
@@ -259,7 +259,7 @@ mod tests {
 
         // Verify error messages don't have trailing whitespace or unexpected formatting
         for error in [
-            PriceLevelError::InvalidFormat.to_string(),
+            PriceLevelError::InvalidFormat("test".to_string()).to_string(),
             PriceLevelError::UnknownOrderType("Test".to_string()).to_string(),
             PriceLevelError::InvalidFieldValue {
                 field: "f".to_string(),

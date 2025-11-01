@@ -4,7 +4,7 @@
    Date: 28/3/25
 ******************************************************************************/
 
-use pricelevel::{OrderCommon, OrderId, Order, PriceLevel, Side, TimeInForce};
+use pricelevel::{Order, OrderCommon, OrderId, PriceLevel, Side, TimeInForce};
 
 #[cfg(test)]
 mod integration_tests {
@@ -56,7 +56,7 @@ mod integration_tests {
 
     #[test]
     fn test_price_level_basic_operations() {
-        let price_level = PriceLevel::new(10000);
+        let mut price_level = PriceLevel::new(10000);
 
         let order = Order::<()>::Standard {
             common: OrderCommon {

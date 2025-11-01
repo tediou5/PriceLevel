@@ -73,14 +73,22 @@ impl FromStr for TransactionList {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if !s.starts_with("Transactions:[") || !s.ends_with("]") {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid transaction list format".to_string(),
+            ));
         }
 
-        let content_start = s.find('[').ok_or(PriceLevelError::InvalidFormat)?;
-        let content_end = s.rfind(']').ok_or(PriceLevelError::InvalidFormat)?;
+        let content_start = s.find('[').ok_or(PriceLevelError::InvalidFormat(
+            "Missing opening bracket".to_string(),
+        ))?;
+        let content_end = s.rfind(']').ok_or(PriceLevelError::InvalidFormat(
+            "Missing closing bracket".to_string(),
+        ))?;
 
         if content_start >= content_end {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid bracket positions".to_string(),
+            ));
         }
 
         let content = &s[content_start + 1..content_end];

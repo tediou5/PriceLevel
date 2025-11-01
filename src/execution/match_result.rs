@@ -113,10 +113,14 @@ impl FromStr for MatchResult {
                 return Ok((value, pos));
             }
 
-            Err(PriceLevelError::InvalidFormat)
+            Err(PriceLevelError::InvalidFormat(
+                "Field not found".to_string(),
+            ))
         }
         if !s.starts_with("MatchResult:") {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid match result format".to_string(),
+            ));
         }
 
         let mut order_id_str = None;
@@ -130,7 +134,11 @@ impl FromStr for MatchResult {
         while pos < s.len() {
             let field_end = match s[pos..].find('=') {
                 Some(idx) => pos + idx,
-                None => return Err(PriceLevelError::InvalidFormat),
+                None => {
+                    return Err(PriceLevelError::InvalidFormat(
+                        "Missing field separator".to_string(),
+                    ));
+                }
             };
 
             let field_name = &s[pos..field_end];
@@ -153,7 +161,9 @@ impl FromStr for MatchResult {
                 }
                 "transactions" => {
                     if !s[pos..].starts_with("Transactions:[") {
-                        return Err(PriceLevelError::InvalidFormat);
+                        return Err(PriceLevelError::InvalidFormat(
+                            "Invalid transactions format".to_string(),
+                        ));
                     }
 
                     let mut bracket_depth = 1;
@@ -175,7 +185,9 @@ impl FromStr for MatchResult {
                     }
 
                     if bracket_depth > 0 {
-                        return Err(PriceLevelError::InvalidFormat);
+                        return Err(PriceLevelError::InvalidFormat(
+                            "Unbalanced brackets in transactions".to_string(),
+                        ));
                     }
 
                     transactions_str = Some(&s[pos..=i]);
@@ -183,12 +195,16 @@ impl FromStr for MatchResult {
                     if pos < s.len() && s[pos..].starts_with(';') {
                         pos += 1;
                     } else if pos < s.len() {
-                        return Err(PriceLevelError::InvalidFormat);
+                        return Err(PriceLevelError::InvalidFormat(
+                            "Invalid transaction format".to_string(),
+                        ));
                     }
                 }
                 "filled_order_ids" => {
                     if !s[pos..].starts_with('[') {
-                        return Err(PriceLevelError::InvalidFormat);
+                        return Err(PriceLevelError::InvalidFormat(
+                            "Missing order list opening bracket".to_string(),
+                        ));
                     }
 
                     let mut bracket_depth = 1;
@@ -210,7 +226,9 @@ impl FromStr for MatchResult {
                     }
 
                     if bracket_depth > 0 {
-                        return Err(PriceLevelError::InvalidFormat);
+                        return Err(PriceLevelError::InvalidFormat(
+                            "Unbalanced brackets in order list".to_string(),
+                        ));
                     }
 
                     filled_order_ids_str = Some(&s[pos..=i]);
@@ -220,7 +238,11 @@ impl FromStr for MatchResult {
                         pos += 1;
                     }
                 }
-                _ => return Err(PriceLevelError::InvalidFormat),
+                _ => {
+                    return Err(PriceLevelError::InvalidFormat(
+                        "Unknown field in match result".to_string(),
+                    ));
+                }
             }
         }
 

@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{OrderCommon, OrderId, Order, OrderUpdate, PriceLevel, Side, TimeInForce};
+use pricelevel::{Order, OrderCommon, OrderId, OrderUpdate, PriceLevel, Side, TimeInForce};
 use std::hint::black_box;
 
 /// Register all benchmarks for updating orders at a price level
@@ -9,7 +9,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark canceling orders
     group.bench_function("cancel_order", |b| {
         b.iter(|| {
-            let price_level = setup_standard_orders(100);
+            let mut price_level = setup_standard_orders(100);
             // Cancel orders from the middle to avoid best/worst case scenarios
             for i in 25..75 {
                 let _ = black_box(price_level.update_order(OrderUpdate::Cancel {
@@ -22,7 +22,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark updating order quantities
     group.bench_function("update_quantity", |b| {
         b.iter(|| {
-            let price_level = setup_standard_orders(100);
+            let mut price_level = setup_standard_orders(100);
             for i in 25..75 {
                 let _ = black_box(price_level.update_order(OrderUpdate::UpdateQuantity {
                     order_id: OrderId::from_u64(i),
@@ -35,7 +35,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark replacing orders (same price)
     group.bench_function("replace_order_same_price", |b| {
         b.iter(|| {
-            let price_level = setup_standard_orders(100);
+            let mut price_level = setup_standard_orders(100);
             for i in 25..75 {
                 let _ = black_box(price_level.update_order(OrderUpdate::Replace {
                     order_id: OrderId::from_u64(i),
@@ -50,7 +50,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark replacing orders (different price)
     group.bench_function("replace_order_different_price", |b| {
         b.iter(|| {
-            let price_level = setup_standard_orders(100);
+            let mut price_level = setup_standard_orders(100);
             for i in 25..75 {
                 let _ = black_box(price_level.update_order(OrderUpdate::Replace {
                     order_id: OrderId::from_u64(i),
@@ -65,7 +65,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark updating iceberg orders
     group.bench_function("update_iceberg_quantity", |b| {
         b.iter(|| {
-            let price_level = setup_iceberg_orders(100);
+            let mut price_level = setup_iceberg_orders(100);
             for i in 25..75 {
                 // In a real scenario we'd be updating both visible and hidden
                 // but for benchmark we're just using the UpdateQuantity which works on visible
@@ -84,7 +84,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
             order_count,
             |b, &order_count| {
                 b.iter(|| {
-                    let price_level = setup_standard_orders(order_count);
+                    let mut price_level = setup_standard_orders(order_count);
                     // Cancel 25% of orders
                     let cancel_count = order_count / 4;
                     for i in 0..cancel_count {
@@ -104,7 +104,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
 
 /// Set up a price level with standard orders
 fn setup_standard_orders(order_count: u64) -> PriceLevel {
-    let price_level = PriceLevel::new(10000);
+    let mut price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
         let order = Order::Standard {
@@ -126,7 +126,7 @@ fn setup_standard_orders(order_count: u64) -> PriceLevel {
 
 /// Set up a price level with iceberg orders
 fn setup_iceberg_orders(order_count: u64) -> PriceLevel {
-    let price_level = PriceLevel::new(10000);
+    let mut price_level = PriceLevel::new(10000);
 
     for i in 0..order_count {
         let order = Order::IcebergOrder {

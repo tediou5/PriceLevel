@@ -1,7 +1,5 @@
 use criterion::{BenchmarkId, Criterion};
-use pricelevel::{
-    OrderCommon, OrderId, Order, PegReferenceType, PriceLevel, Side, TimeInForce,
-};
+use pricelevel::{Order, OrderCommon, OrderId, PegReferenceType, PriceLevel, Side, TimeInForce};
 use std::hint::black_box;
 
 /// Register all benchmarks for adding orders to a price level
@@ -11,7 +9,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark adding standard orders
     group.bench_function("add_standard_order", |b| {
         b.iter(|| {
-            let price_level = PriceLevel::new(10000);
+            let mut price_level = PriceLevel::new(10000);
             for i in 0..100 {
                 let order = create_standard_order(i, 10000, 100);
                 black_box(price_level.add_order(order));
@@ -22,7 +20,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark adding iceberg orders
     group.bench_function("add_iceberg_order", |b| {
         b.iter(|| {
-            let price_level = PriceLevel::new(10000);
+            let mut price_level = PriceLevel::new(10000);
             for i in 0..100 {
                 let order = create_iceberg_order(i, 10000, 50, 150);
                 black_box(price_level.add_order(order));
@@ -33,7 +31,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark adding reserve orders
     group.bench_function("add_reserve_order", |b| {
         b.iter(|| {
-            let price_level = PriceLevel::new(10000);
+            let mut price_level = PriceLevel::new(10000);
             for i in 0..100 {
                 let order = create_reserve_order(i, 10000, 50, 150, 10, true, None);
                 black_box(price_level.add_order(order));
@@ -44,7 +42,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
     // Benchmark adding mixed order types
     group.bench_function("add_mixed_orders", |b| {
         b.iter(|| {
-            let price_level = PriceLevel::new(10000);
+            let mut price_level = PriceLevel::new(10000);
             for i in 0..100 {
                 let order = match i % 5 {
                     0 => create_standard_order(i, 10000, 100),
@@ -65,7 +63,7 @@ pub fn register_benchmarks(c: &mut Criterion) {
             order_count,
             |b, &order_count| {
                 b.iter(|| {
-                    let price_level = PriceLevel::new(10000);
+                    let mut price_level = PriceLevel::new(10000);
                     for i in 0..order_count {
                         let order = create_standard_order(i, 10000, 100);
                         black_box(price_level.add_order(order));

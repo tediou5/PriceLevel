@@ -358,7 +358,9 @@ impl FromStr for PriceLevelSnapshot {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 || parts[0] != "PriceLevelSnapshot" {
-            return Err(PriceLevelError::InvalidFormat);
+            return Err(PriceLevelError::InvalidFormat(
+                "Invalid price level snapshot format".to_string(),
+            ));
         }
 
         let fields_str = parts[1];
@@ -423,7 +425,7 @@ impl FromStr for PriceLevelSnapshot {
 #[cfg(test)]
 mod tests {
     use crate::errors::PriceLevelError;
-    use crate::order::{OrderCommon, OrderId, Order, Side, TimeInForce};
+    use crate::order::{Order, OrderCommon, OrderId, Side, TimeInForce};
     use crate::price_level::snapshot::SNAPSHOT_FORMAT_VERSION;
     use crate::price_level::{PriceLevelSnapshot, PriceLevelSnapshotPackage};
     use serde_json::Value;
@@ -780,8 +782,8 @@ mod tests {
 
         // Check serialized fields and orders
         assert!(serialized.contains("\"price\":10000"));
-        assert!(serialized.contains("\"visible_quantity\":150"));
-        assert!(serialized.contains("\"hidden_quantity\":250"));
+        assert!(serialized.contains("\"display_quantity\":150"));
+        assert!(serialized.contains("\"reserve_quantity\":250"));
         assert!(serialized.contains("\"order_count\":2"));
         assert!(serialized.contains("\"orders\":["));
         assert!(serialized.contains("\"Standard\":{"));
@@ -834,7 +836,7 @@ mod tests {
 
 #[cfg(test)]
 mod pricelevel_snapshot_serialization_tests {
-    use crate::order::{OrderCommon, OrderId, Order, Side, TimeInForce};
+    use crate::order::{Order, OrderCommon, OrderId, Side, TimeInForce};
     use crate::price_level::PriceLevelSnapshot;
 
     use std::str::FromStr;
@@ -900,8 +902,8 @@ mod pricelevel_snapshot_serialization_tests {
 
         // Verify basic JSON properties
         assert!(json.contains("\"price\":1000"));
-        assert!(json.contains("\"visible_quantity\":15"));
-        assert!(json.contains("\"hidden_quantity\":15"));
+        assert!(json.contains("\"display_quantity\":15"));
+        assert!(json.contains("\"reserve_quantity\":15"));
         assert!(json.contains("\"order_count\":3"));
 
         // Verify orders array
