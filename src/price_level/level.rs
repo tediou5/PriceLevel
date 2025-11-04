@@ -245,6 +245,7 @@ impl PriceLevel {
             }
         }
 
+        result.is_complete = remaining == 0;
         result.remaining_quantity = remaining;
         result
     }
