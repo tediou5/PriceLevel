@@ -245,6 +245,7 @@ impl PriceLevel {
             }
         }
 
+        result.is_complete = remaining == 0;
         result.remaining_quantity = remaining;
         result
     }
@@ -1140,6 +1141,22 @@ mod tests {
         assert_eq!(price_level.stats().orders_executed(), 1);
         assert_eq!(price_level.stats().quantity_executed(), 100);
         assert_eq!(price_level.stats().value_executed(), 1000000); // 100 * 10000
+    }
+
+    #[test]
+    fn test_match_zero_quantity_is_trivially_complete() {
+        let mut price_level = PriceLevel::new(10000);
+        let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+        let transaction_id_generator = UuidGenerator::new(namespace);
+
+        let taker_id = OrderId::from_u64(4242);
+        let match_result = price_level.match_order(0, taker_id, &transaction_id_generator);
+
+        assert_eq!(match_result.order_id, taker_id);
+        assert_eq!(match_result.remaining_quantity, 0);
+        assert!(match_result.is_complete);
+        assert!(match_result.transactions.is_empty());
+        assert!(match_result.filled_order_ids.is_empty());
     }
 
     #[test]
