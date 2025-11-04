@@ -2,90 +2,178 @@ use crate::order::{Order, OrderId};
 use serde::de::{SeqAccess, Visitor};
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::{HashMap, VecDeque};
+use slab::Slab;
+use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::str::FromStr;
 
-/// A single-threaded queue of orders with efficient operations
+#[derive(Debug)]
+struct Entry {
+    order: Rc<Order<()>>,
+    prev: Option<usize>,
+    next: Option<usize>,
+}
+
 #[derive(Debug)]
 pub struct OrderQueue {
-    /// A map of order IDs to orders for quick lookups
-    orders: HashMap<OrderId, Rc<Order<()>>>,
-    /// A queue of order IDs to maintain FIFO order
-    order_ids: VecDeque<OrderId>,
+    orders: Slab<Entry>,
+    index: HashMap<OrderId, usize>,
+    head: Option<usize>,
+    tail: Option<usize>,
 }
 
 impl OrderQueue {
     /// Create a new empty order queue
     pub fn new() -> Self {
         Self {
-            orders: HashMap::new(),
-            order_ids: VecDeque::new(),
+            orders: Slab::new(),
+            index: HashMap::new(),
+            head: None,
+            tail: None,
         }
     }
 
-    /// Add an order to the queue
+    /// Create a new empty order queue with capacity
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            orders: Slab::with_capacity(cap),
+            index: HashMap::with_capacity(cap),
+            head: None,
+            tail: None,
+        }
+    }
+
+    /// Add an order to the queue (FIFO push_back)
     pub fn push(&mut self, order: Rc<Order<()>>) {
         let order_id = order.id();
-        self.orders.insert(order_id, order);
-        self.order_ids.push_back(order_id);
+
+        if self.index.contains_key(&order_id) {
+            let _ = self.remove(&order_id);
+        }
+
+        let prev = self.tail;
+        let entry = Entry {
+            order,
+            prev,
+            next: None,
+        };
+        let key = self.orders.insert(entry);
+
+        if let Some(t) = self.tail {
+            self.orders[t].next = Some(key);
+        } else {
+            self.head = Some(key);
+        }
+        self.tail = Some(key);
+
+        self.index.insert(order_id, key);
     }
 
-    /// Attempt to pop an order from the queue
+    /// Attempt to pop an order from the head of the queue
     pub fn pop(&mut self) -> Option<Rc<Order<()>>> {
-        while let Some(order_id) = self.order_ids.pop_front() {
-            if let Some(order) = self.orders.remove(&order_id) {
-                return Some(order);
-            }
-            // If the order was removed but ID was still in queue, continue to next
+        let head_key = self.head?;
+        let (next_key, order_id, order) = {
+            let e = &self.orders[head_key];
+            (e.next, e.order.id(), e.order.clone())
+        };
+
+        self.orders.remove(head_key);
+        self.index.remove(&order_id);
+
+        if let Some(nk) = next_key {
+            self.orders[nk].prev = None;
+            self.head = Some(nk);
+        } else {
+            self.head = None;
+            self.tail = None;
         }
-        None
+
+        Some(order)
     }
 
     /// Find an order by ID
     pub fn find(&self, order_id: &OrderId) -> Option<Rc<Order<()>>> {
-        self.orders.get(order_id).cloned()
+        self.index
+            .get(order_id)
+            .and_then(|&k| self.orders.get(k))
+            .map(|e| e.order.clone())
     }
 
-    /// Remove an order by ID
+    /// Remove an order by ID (O(1), no tombstone)
     pub fn remove(&mut self, order_id: &OrderId) -> Option<Rc<Order<()>>> {
-        self.orders.remove(order_id)
+        let key = *self.index.get(order_id)?;
+        let (prev, next, order) = {
+            let e = &self.orders[key];
+            (e.prev, e.next, e.order.clone())
+        };
+
+        if let Some(pk) = prev {
+            self.orders[pk].next = next;
+        } else {
+            // removing head
+            self.head = next;
+        }
+
+        if let Some(nk) = next {
+            self.orders[nk].prev = prev;
+        } else {
+            // removing tail
+            self.tail = prev;
+        }
+
+        self.orders.remove(key);
+        self.index.remove(order_id);
+
+        Some(order)
     }
 
     /// Convert queue to vector (for iteration)
     pub fn to_vec(&self) -> Vec<Rc<Order<()>>> {
-        self.order_ids
-            .iter()
-            .filter_map(|id| self.orders.get(id).cloned())
-            .collect()
+        self.iter().cloned().collect()
     }
 
     /// Create queue from vector of orders
     pub fn from_vec(orders: Vec<Rc<Order<()>>>) -> Self {
-        let mut order_queue = Self::new();
-        for order in orders {
-            order_queue.push(order);
-        }
-        order_queue
+        let mut q = Self::with_capacity(orders.len());
+        orders.into_iter().for_each(|order| q.push(order));
+
+        q
     }
 
     /// Check if the queue is empty
     pub fn is_empty(&self) -> bool {
-        self.orders.is_empty()
+        self.index.is_empty()
     }
 
     /// Get the number of orders in the queue
     pub fn len(&self) -> usize {
-        self.orders.len()
+        self.index.len()
     }
 
-    /// Iterator over orders
-    pub fn iter(&self) -> impl Iterator<Item = &Rc<Order<()>>> {
-        self.order_ids
-            .iter()
-            .filter_map(move |id| self.orders.get(id))
+    /// Iterator over orders in FIFO order
+    pub fn iter(&self) -> OrderQueueIter<'_> {
+        OrderQueueIter {
+            q: self,
+            cur: self.head,
+        }
+    }
+}
+
+pub struct OrderQueueIter<'a> {
+    q: &'a OrderQueue,
+    cur: Option<usize>,
+}
+
+impl<'a> Iterator for OrderQueueIter<'a> {
+    type Item = &'a Rc<Order<()>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let k = self.cur?;
+        let e = self.q.orders.get(k)?;
+        self.cur = e.next;
+        Some(&e.order)
     }
 }
 
@@ -100,10 +188,9 @@ impl Serialize for OrderQueue {
     where
         S: Serializer,
     {
-        let orders = self.to_vec();
-        let mut seq = serializer.serialize_seq(Some(orders.len()))?;
-        for order in orders {
-            seq.serialize_element(&*order)?;
+        let mut seq = serializer.serialize_seq(Some(self.len()))?;
+        for order in self.iter() {
+            seq.serialize_element(order.as_ref())?
         }
         seq.end()
     }
@@ -113,18 +200,14 @@ impl FromStr for OrderQueue {
     type Err = serde_json::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let orders: Vec<Order<()>> = serde_json::from_str(s)?;
-        let rc_orders: Vec<Rc<Order<()>>> = orders.into_iter().map(Rc::new).collect();
-        Ok(Self::from_vec(rc_orders))
+        serde_json::from_str(s)
     }
 }
 
 impl fmt::Display for OrderQueue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let orders = self.to_vec();
-        let order_values: Vec<Order<()>> = orders.iter().map(|rc| **rc).collect();
-        let json = serde_json::to_string(&order_values).map_err(|_| fmt::Error)?;
-        write!(f, "{}", json)
+        let json = serde_json::to_string(&self).map_err(|_| fmt::Error)?;
+        write!(f, "{json}")
     }
 }
 
@@ -157,11 +240,11 @@ impl<'de> Visitor<'de> for OrderQueueVisitor {
     where
         V: SeqAccess<'de>,
     {
-        let mut orders = Vec::new();
+        let mut order_queue = OrderQueue::new();
         while let Some(order) = seq.next_element::<Order<()>>()? {
-            orders.push(Rc::new(order));
+            order_queue.push(Rc::new(order));
         }
-        Ok(OrderQueue::from_vec(orders))
+        Ok(order_queue)
     }
 }
 
