@@ -6,12 +6,11 @@ use slab::Slab;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
-use std::rc::Rc;
 use std::str::FromStr;
 
 #[derive(Debug)]
 struct Entry {
-    order: Rc<Order<()>>,
+    order: Order<()>,
     prev: Option<usize>,
     next: Option<usize>,
 }
@@ -46,7 +45,7 @@ impl OrderQueue {
     }
 
     /// Add an order to the queue (FIFO push_back)
-    pub fn push(&mut self, order: Rc<Order<()>>) {
+    pub fn push(&mut self, order: Order<()>) -> &Order<()> {
         let order_id = order.id();
 
         if self.index.contains_key(&order_id) {
@@ -69,45 +68,39 @@ impl OrderQueue {
         self.tail = Some(key);
 
         self.index.insert(order_id, key);
+        &self.orders[key].order
     }
 
     /// Attempt to pop an order from the head of the queue
-    pub fn pop(&mut self) -> Option<Rc<Order<()>>> {
+    pub fn pop(&mut self) -> Option<Order<()>> {
         let head_key = self.head?;
-        let (next_key, order_id, order) = {
-            let e = &self.orders[head_key];
-            (e.next, e.order.id(), e.order.clone())
-        };
+        let entry = self.orders.remove(head_key);
+        let order = entry.order;
 
-        self.orders.remove(head_key);
-        self.index.remove(&order_id);
-
-        if let Some(nk) = next_key {
+        if let Some(nk) = entry.next {
             self.orders[nk].prev = None;
             self.head = Some(nk);
         } else {
             self.head = None;
             self.tail = None;
         }
+        self.index.remove(&order.id());
 
         Some(order)
     }
 
     /// Find an order by ID
-    pub fn find(&self, order_id: &OrderId) -> Option<Rc<Order<()>>> {
+    pub fn find(&self, order_id: &OrderId) -> Option<&Order<()>> {
         self.index
             .get(order_id)
             .and_then(|&k| self.orders.get(k))
-            .map(|e| e.order.clone())
+            .map(|e| &e.order)
     }
 
     /// Remove an order by ID (O(1), no tombstone)
-    pub fn remove(&mut self, order_id: &OrderId) -> Option<Rc<Order<()>>> {
+    pub fn remove(&mut self, order_id: &OrderId) -> Option<Order<()>> {
         let key = *self.index.get(order_id)?;
-        let (prev, next, order) = {
-            let e = &self.orders[key];
-            (e.prev, e.next, e.order.clone())
-        };
+        let Entry { order, next, prev } = self.orders.remove(key);
 
         if let Some(pk) = prev {
             self.orders[pk].next = next;
@@ -123,21 +116,22 @@ impl OrderQueue {
             self.tail = prev;
         }
 
-        self.orders.remove(key);
         self.index.remove(order_id);
 
         Some(order)
     }
 
     /// Convert queue to vector (for iteration)
-    pub fn to_vec(&self) -> Vec<Rc<Order<()>>> {
+    pub fn to_vec(&self) -> Vec<Order<()>> {
         self.iter().cloned().collect()
     }
 
     /// Create queue from vector of orders
-    pub fn from_vec(orders: Vec<Rc<Order<()>>>) -> Self {
+    pub fn from_vec(orders: Vec<Order<()>>) -> Self {
         let mut q = Self::with_capacity(orders.len());
-        orders.into_iter().for_each(|order| q.push(order));
+        orders.into_iter().for_each(|order| {
+            q.push(order);
+        });
 
         q
     }
@@ -167,7 +161,7 @@ pub struct OrderQueueIter<'a> {
 }
 
 impl<'a> Iterator for OrderQueueIter<'a> {
-    type Item = &'a Rc<Order<()>>;
+    type Item = &'a Order<()>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let k = self.cur?;
@@ -190,7 +184,7 @@ impl Serialize for OrderQueue {
     {
         let mut seq = serializer.serialize_seq(Some(self.len()))?;
         for order in self.iter() {
-            seq.serialize_element(order.as_ref())?
+            seq.serialize_element(order)?;
         }
         seq.end()
     }
@@ -211,8 +205,8 @@ impl fmt::Display for OrderQueue {
     }
 }
 
-impl From<Vec<Rc<Order<()>>>> for OrderQueue {
-    fn from(orders: Vec<Rc<Order<()>>>) -> Self {
+impl From<Vec<Order<()>>> for OrderQueue {
+    fn from(orders: Vec<Order<()>>) -> Self {
         Self::from_vec(orders)
     }
 }
@@ -242,7 +236,7 @@ impl<'de> Visitor<'de> for OrderQueueVisitor {
     {
         let mut order_queue = OrderQueue::new();
         while let Some(order) = seq.next_element::<Order<()>>()? {
-            order_queue.push(Rc::new(order));
+            order_queue.push(order);
         }
         Ok(order_queue)
     }
@@ -261,7 +255,6 @@ impl<'de> Deserialize<'de> for OrderQueue {
 mod tests {
     use crate::order::{Order, OrderCommon, OrderId, Side, TimeInForce};
     use crate::price_level::order_queue::OrderQueue;
-    use std::rc::Rc;
     use std::str::FromStr;
 
     fn create_test_order(id: u64, price: u64, quantity: u64) -> Order<()> {
@@ -281,8 +274,8 @@ mod tests {
     #[test]
     fn test_display() {
         let mut queue = OrderQueue::new();
-        let order1 = Rc::new(create_test_order(1, 100, 10));
-        let order2 = Rc::new(create_test_order(2, 101, 20));
+        let order1 = create_test_order(1, 100, 10);
+        let order2 = create_test_order(2, 101, 20);
 
         queue.push(order1);
         queue.push(order2);
@@ -333,8 +326,8 @@ mod tests {
     #[test]
     fn test_serialize_deserialize() {
         let mut original_queue = OrderQueue::new();
-        let order1 = Rc::new(create_test_order(1, 100, 10));
-        let order2 = Rc::new(create_test_order(2, 101, 20));
+        let order1 = create_test_order(1, 100, 10);
+        let order2 = create_test_order(2, 101, 20);
 
         original_queue.push(order1);
         original_queue.push(order2);
@@ -354,7 +347,7 @@ mod tests {
     #[test]
     fn test_round_trip() {
         let mut original_queue = OrderQueue::new();
-        let order = Rc::new(create_test_order(1, 100, 10));
+        let order = create_test_order(1, 100, 10);
         original_queue.push(order);
 
         let display_str = original_queue.to_string();
@@ -378,13 +371,13 @@ mod tests {
         assert!(queue.is_empty());
         assert_eq!(queue.len(), 0);
 
-        let order1 = Rc::new(create_test_order(1, 100, 10));
-        let order2 = Rc::new(create_test_order(2, 101, 20));
+        let order1 = create_test_order(1, 100, 10);
+        let order2 = create_test_order(2, 101, 20);
         let order1_id = order1.id();
         let order2_id = order2.id();
 
-        queue.push(order1.clone());
-        queue.push(order2.clone());
+        queue.push(order1);
+        queue.push(order2);
 
         assert!(!queue.is_empty());
         assert_eq!(queue.len(), 2);
@@ -421,9 +414,9 @@ mod tests {
 
     #[test]
     fn test_order_queue_from_vec() {
-        let order1 = Rc::new(create_test_order(1, 100, 10));
-        let order2 = Rc::new(create_test_order(2, 101, 20));
-        let orders = vec![order1.clone(), order2.clone()];
+        let order1 = create_test_order(1, 100, 10);
+        let order2 = create_test_order(2, 101, 20);
+        let orders = vec![order1, order2];
 
         let queue = OrderQueue::from_vec(orders);
         assert_eq!(queue.len(), 2);
@@ -436,8 +429,8 @@ mod tests {
     #[test]
     fn test_order_queue_iter() {
         let mut queue = OrderQueue::new();
-        let order1 = Rc::new(create_test_order(1, 100, 10));
-        let order2 = Rc::new(create_test_order(2, 101, 20));
+        let order1 = create_test_order(1, 100, 10);
+        let order2 = create_test_order(2, 101, 20);
 
         queue.push(order1);
         queue.push(order2);
@@ -449,8 +442,8 @@ mod tests {
     #[test]
     fn test_order_queue_pop_after_remove() {
         let mut queue = OrderQueue::new();
-        let order1 = Rc::new(create_test_order(1, 100, 10));
-        let order2 = Rc::new(create_test_order(2, 101, 20));
+        let order1 = create_test_order(1, 100, 10);
+        let order2 = create_test_order(2, 101, 20);
         let order1_id = order1.id();
 
         queue.push(order1);
@@ -471,7 +464,7 @@ mod tests {
 
         // Add several orders
         for i in 1..=5 {
-            let order = Rc::new(create_test_order(i, 100 + i, 10 * i));
+            let order = create_test_order(i, 100 + i, 10 * i);
             queue.push(order);
         }
 

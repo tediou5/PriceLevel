@@ -6,7 +6,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Arc;
 
 /// A snapshot of a price level in the order book. This struct provides a summary of the state of a specific price level
 /// at a given point in time, including the price, visible and hidden quantities, order count, and a vector of the orders
@@ -22,7 +21,7 @@ pub struct PriceLevelSnapshot {
     /// Number of orders at this level.
     pub order_count: usize,
     /// Orders at this level.  This is a vector of `Arc<OrderType<()>>` representing each individual order at this price level.
-    pub orders: Vec<Arc<Order<()>>>,
+    pub orders: Vec<Order<()>>,
 }
 
 impl PriceLevelSnapshot {
@@ -43,7 +42,7 @@ impl PriceLevelSnapshot {
     }
 
     /// Get an iterator over the orders in this snapshot
-    pub fn iter_orders(&self) -> impl Iterator<Item = &Arc<Order<()>>> {
+    pub fn iter_orders(&self) -> impl Iterator<Item = &Order<()>> {
         self.orders.iter()
     }
 
@@ -171,11 +170,7 @@ impl Serialize for PriceLevelSnapshot {
         state.serialize_field("display_quantity", &self.display_quantity)?;
         state.serialize_field("reserve_quantity", &self.reserve_quantity)?;
         state.serialize_field("order_count", &self.order_count)?;
-
-        let plain_orders: Vec<Order<()>> =
-            self.orders.iter().map(|arc_order| **arc_order).collect();
-
-        state.serialize_field("orders", &plain_orders)?;
+        state.serialize_field("orders", &self.orders)?;
 
         state.end()
     }
@@ -306,8 +301,7 @@ impl<'de> Deserialize<'de> for PriceLevelSnapshot {
                             if orders.is_some() {
                                 return Err(de::Error::duplicate_field("orders"));
                             }
-                            let plain_orders: Vec<Order<()>> = map.next_value()?;
-                            orders = Some(plain_orders.into_iter().map(Arc::new).collect());
+                            orders = Some(map.next_value()?);
                         }
                     }
                 }
@@ -430,11 +424,10 @@ mod tests {
     use crate::price_level::{PriceLevelSnapshot, PriceLevelSnapshotPackage};
     use serde_json::Value;
     use std::str::FromStr;
-    use std::sync::Arc;
 
-    fn create_sample_orders() -> Vec<Arc<Order<()>>> {
+    fn create_sample_orders() -> Vec<Order<()>> {
         vec![
-            Arc::new(Order::Standard {
+            Order::Standard {
                 common: OrderCommon {
                     id: OrderId::from_u64(1),
                     price: 1000,
@@ -444,8 +437,8 @@ mod tests {
                     time_in_force: TimeInForce::Gtc,
                     extra_fields: (),
                 },
-            }),
-            Arc::new(Order::IcebergOrder {
+            },
+            Order::IcebergOrder {
                 common: OrderCommon {
                     id: OrderId::from_u64(2),
                     price: 1000,
@@ -456,7 +449,7 @@ mod tests {
                     extra_fields: (),
                 },
                 reserve_quantity: 15,
-            }),
+            },
         ]
     }
 
@@ -566,7 +559,7 @@ mod tests {
         // Verify first order
         if let Order::Standard {
             common: OrderCommon { id, .. },
-        } = **collected[0]
+        } = *collected[0]
         {
             assert_eq!(id, OrderId::from_u64(1));
         } else {
@@ -577,7 +570,7 @@ mod tests {
         if let Order::IcebergOrder {
             common: OrderCommon { id, .. },
             ..
-        } = **collected[1]
+        } = *collected[1]
         {
             assert_eq!(id, OrderId::from_u64(2));
         } else {
@@ -771,8 +764,8 @@ mod tests {
         snapshot.order_count = 2;
 
         let orders = vec![
-            Arc::new(create_standard_order(1, 10000, 100)),
-            Arc::new(create_iceberg_order(2, 10000, 50, 250)),
+            create_standard_order(1, 10000, 100),
+            create_iceberg_order(2, 10000, 50, 250),
         ];
 
         snapshot.orders = orders;
@@ -806,10 +799,10 @@ mod tests {
                     display_quantity: quantity,
                     ..
                 },
-        } = &*deserialized.orders[0]
+        } = deserialized.orders[0]
         {
-            assert_eq!(*id, OrderId::from_u64(1));
-            assert_eq!(*quantity, 100);
+            assert_eq!(id, OrderId::from_u64(1));
+            assert_eq!(quantity, 100);
         } else {
             panic!("Expected Standard order");
         }
@@ -823,11 +816,11 @@ mod tests {
                 },
             reserve_quantity: hidden_quantity,
             ..
-        } = &*deserialized.orders[1]
+        } = deserialized.orders[1]
         {
-            assert_eq!(*id, OrderId::from_u64(2));
-            assert_eq!(*visible_quantity, 50);
-            assert_eq!(*hidden_quantity, 250);
+            assert_eq!(id, OrderId::from_u64(2));
+            assert_eq!(visible_quantity, 50);
+            assert_eq!(hidden_quantity, 250);
         } else {
             panic!("Expected IcebergOrder");
         }
@@ -838,14 +831,12 @@ mod tests {
 mod pricelevel_snapshot_serialization_tests {
     use crate::order::{Order, OrderCommon, OrderId, Side, TimeInForce};
     use crate::price_level::PriceLevelSnapshot;
-
     use std::str::FromStr;
-    use std::sync::Arc;
 
     // Helper function to create sample orders for testing
-    fn create_sample_orders() -> Vec<Arc<Order<()>>> {
+    fn create_sample_orders() -> Vec<Order<()>> {
         vec![
-            Arc::new(Order::Standard {
+            Order::Standard {
                 common: OrderCommon {
                     id: OrderId::from_u64(1),
                     price: 1000,
@@ -855,8 +846,8 @@ mod pricelevel_snapshot_serialization_tests {
                     time_in_force: TimeInForce::Gtc,
                     extra_fields: (),
                 },
-            }),
-            Arc::new(Order::IcebergOrder {
+            },
+            Order::IcebergOrder {
                 common: OrderCommon {
                     id: OrderId::from_u64(2),
                     price: 1000,
@@ -867,8 +858,8 @@ mod pricelevel_snapshot_serialization_tests {
                     extra_fields: (),
                 },
                 reserve_quantity: 15,
-            }),
-            Arc::new(Order::PostOnly {
+            },
+            Order::PostOnly {
                 common: OrderCommon {
                     id: OrderId::from_u64(3),
                     price: 1000,
@@ -878,7 +869,7 @@ mod pricelevel_snapshot_serialization_tests {
                     time_in_force: TimeInForce::Ioc,
                     extra_fields: (),
                 },
-            }),
+            },
         ]
     }
 
@@ -941,7 +932,7 @@ mod pricelevel_snapshot_serialization_tests {
 
         // Check specific order details
         let standard_order = &deserialized.orders[0];
-        match **standard_order {
+        match *standard_order {
             Order::Standard {
                 common:
                     OrderCommon {
@@ -961,7 +952,7 @@ mod pricelevel_snapshot_serialization_tests {
         }
 
         let iceberg_order = &deserialized.orders[1];
-        match **iceberg_order {
+        match *iceberg_order {
             Order::IcebergOrder {
                 common:
                     OrderCommon {
@@ -982,8 +973,8 @@ mod pricelevel_snapshot_serialization_tests {
         }
 
         let post_only_order = &deserialized.orders[2];
-        match **post_only_order {
-            Order::<()>::PostOnly {
+        match *post_only_order {
+            Order::PostOnly {
                 common:
                     OrderCommon {
                         id,
@@ -1180,7 +1171,7 @@ mod pricelevel_snapshot_serialization_tests {
         // Add sample orders of different types
         snapshot.orders = vec![
             // Standard order
-            Arc::new(Order::Standard {
+            Order::Standard {
                 common: OrderCommon {
                     id: OrderId::from_u64(1),
                     price: 1000,
@@ -1190,9 +1181,9 @@ mod pricelevel_snapshot_serialization_tests {
                     time_in_force: TimeInForce::Gtc,
                     extra_fields: (),
                 },
-            }),
+            },
             // Iceberg order
-            Arc::new(Order::IcebergOrder {
+            Order::IcebergOrder {
                 common: OrderCommon {
                     id: OrderId::from_u64(2),
                     price: 1000,
@@ -1203,9 +1194,9 @@ mod pricelevel_snapshot_serialization_tests {
                     extra_fields: (),
                 },
                 reserve_quantity: 15,
-            }),
+            },
             // Post-only order
-            Arc::new(Order::PostOnly {
+            Order::PostOnly {
                 common: OrderCommon {
                     id: OrderId::from_u64(3),
                     price: 1000,
@@ -1215,9 +1206,9 @@ mod pricelevel_snapshot_serialization_tests {
                     time_in_force: TimeInForce::Ioc,
                     extra_fields: (),
                 },
-            }),
+            },
             // Fill-or-kill order (as Standard with FOK time-in-force)
-            Arc::new(Order::Standard {
+            Order::Standard {
                 common: OrderCommon {
                     id: OrderId::from_u64(4),
                     price: 1000,
@@ -1227,9 +1218,9 @@ mod pricelevel_snapshot_serialization_tests {
                     time_in_force: TimeInForce::Fok,
                     extra_fields: (),
                 },
-            }),
+            },
             // Good-till-date order (as Standard with GTD time-in-force)
-            Arc::new(Order::Standard {
+            Order::Standard {
                 common: OrderCommon {
                     id: OrderId::from_u64(5),
                     price: 1000,
@@ -1239,9 +1230,9 @@ mod pricelevel_snapshot_serialization_tests {
                     time_in_force: TimeInForce::Gtd(1617000000000),
                     extra_fields: (),
                 },
-            }),
+            },
             // Reserve order
-            Arc::new(Order::ReserveOrder {
+            Order::ReserveOrder {
                 common: OrderCommon {
                     id: OrderId::from_u64(6),
                     price: 1000,
@@ -1255,7 +1246,7 @@ mod pricelevel_snapshot_serialization_tests {
                 replenish_threshold: 1,
                 replenish_amount: None,
                 auto_replenish: true,
-            }),
+            },
         ];
 
         snapshot.order_count = snapshot.orders.len();
@@ -1280,7 +1271,7 @@ mod pricelevel_snapshot_serialization_tests {
         let order_types = deserialized
             .orders
             .iter()
-            .map(|order| match **order {
+            .map(|order| match *order {
                 Order::Standard { .. } => "Standard",
                 Order::IcebergOrder { .. } => "IcebergOrder",
                 Order::PostOnly { .. } => "PostOnly",
@@ -1305,14 +1296,14 @@ mod pricelevel_snapshot_serialization_tests {
         let reserve_order = deserialized
             .orders
             .iter()
-            .find(|order| matches!(***order, Order::ReserveOrder { .. }))
+            .find(|order| matches!(**order, Order::ReserveOrder { .. }))
             .expect("Reserve order not found");
 
         if let Order::ReserveOrder {
             replenish_threshold,
             auto_replenish,
             ..
-        } = **reserve_order
+        } = *reserve_order
         {
             assert_eq!(replenish_threshold, 1);
             assert!(auto_replenish);
@@ -1323,7 +1314,7 @@ mod pricelevel_snapshot_serialization_tests {
             .iter()
             .find(|order| {
                 matches!(
-                    ***order,
+                    **order,
                     Order::Standard {
                         common: OrderCommon {
                             time_in_force: TimeInForce::Gtd(_),
@@ -1340,7 +1331,7 @@ mod pricelevel_snapshot_serialization_tests {
                     time_in_force: TimeInForce::Gtd(expiry),
                     ..
                 },
-        } = **gtd_order
+        } = *gtd_order
         {
             assert_eq!(expiry, 1617000000000);
         }
