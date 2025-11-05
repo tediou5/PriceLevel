@@ -9,9 +9,6 @@ use crate::price_level::{PriceLevelSnapshot, PriceLevelSnapshotPackage, PriceLev
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::str::FromStr;
-use std::sync::Arc;
-
-use std::rc::Rc;
 
 /// A lock-free implementation of a price level in a limit order book
 #[derive(Debug)]
@@ -41,22 +38,14 @@ impl PriceLevel {
         snapshot.refresh_aggregates();
 
         let order_count = snapshot.orders.len();
-        let rc_orders: Vec<Rc<Order<()>>> = snapshot
-            .orders
-            .into_iter()
-            .map(|arc_order| {
-                // Convert Arc to Rc by cloning the inner Order
-                Rc::new(*arc_order)
-            })
-            .collect();
-        let queue = OrderQueue::from(rc_orders);
+        let orders = OrderQueue::from(snapshot.orders);
 
         Ok(Self {
             price: snapshot.price,
             display_quantity: snapshot.display_quantity,
             reserve_quantity: snapshot.reserve_quantity,
             order_count,
-            orders: queue,
+            orders,
             stats: PriceLevelStatistics::new(),
         })
     }
@@ -117,7 +106,7 @@ impl PriceLevel {
     }
 
     /// Add an order to this price level
-    pub fn add_order(&mut self, order: Order<()>) -> Rc<Order<()>> {
+    pub fn add_order(&mut self, order: Order<()>) -> &Order<()> {
         // Calculate quantities
         let visible_qty = order.display_quantity();
         let hidden_qty = order.reserve_quantity();
@@ -131,14 +120,11 @@ impl PriceLevel {
         self.stats.record_order_added();
 
         // Add to order queue
-        let order_rc = Rc::new(order);
-        self.orders.push(order_rc.clone());
-
-        order_rc
+        self.orders.push(order)
     }
 
     /// Creates an iterator over the orders in the price level.
-    pub fn iter_orders(&self) -> Vec<Rc<Order<()>>> {
+    pub fn iter_orders(&self) -> Vec<Order<()>> {
         self.orders.to_vec()
     }
 
@@ -172,76 +158,76 @@ impl PriceLevel {
         let mut remaining = incoming_quantity;
 
         while remaining > 0 {
-            if let Some(order_rc) = self.orders.pop() {
-                let (consumed, updated_order, hidden_reduced, new_remaining) =
-                    order_rc.match_against(remaining);
-
-                if consumed > 0 {
-                    // Update display quantity counter
-                    self.display_quantity -= consumed;
-
-                    // Use UUID generator directly
-                    let transaction_id = transaction_id_generator.next();
-
-                    let transaction = Transaction::new(
-                        transaction_id,
-                        taker_order_id,
-                        order_rc.id(),
-                        self.price,
-                        consumed,
-                        order_rc.side().opposite(),
-                    );
-
-                    result.add_transaction(transaction);
-
-                    // If the order was completely executed, add it to filled_order_ids
-                    if updated_order.is_none() {
-                        result.add_filled_order_id(order_rc.id());
-                    }
-                }
-
-                remaining = new_remaining;
-
-                // Calculate waiting time
-                let current_time = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                let waiting_time = current_time.saturating_sub(order_rc.timestamp());
-
-                // update statistics
-                self.stats
-                    .record_execution(consumed, order_rc.price(), waiting_time);
-
-                if let Some(updated) = updated_order {
-                    if hidden_reduced > 0 {
-                        self.reserve_quantity -= hidden_reduced;
-                        self.display_quantity += hidden_reduced;
-                    }
-
-                    self.orders.push(Rc::new(updated));
-                } else {
-                    self.order_count -= 1;
-                    match &*order_rc {
-                        Order::IcebergOrder {
-                            reserve_quantity, ..
-                        } => {
-                            if *reserve_quantity > 0 && hidden_reduced == 0 {
-                                self.reserve_quantity -= *reserve_quantity;
-                            }
-                        }
-                        Order::ReserveOrder {
-                            reserve_quantity, ..
-                        } => {
-                            if *reserve_quantity > 0 && hidden_reduced == 0 {
-                                self.reserve_quantity -= *reserve_quantity;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            } else {
+            let Some(order) = self.orders.pop() else {
                 break;
+            };
+
+            let (consumed, updated_order, hidden_reduced, new_remaining) =
+                order.match_against(remaining);
+
+            if consumed > 0 {
+                // Update display quantity counter
+                self.display_quantity -= consumed;
+
+                // Use UUID generator directly
+                let transaction_id = transaction_id_generator.next();
+
+                let transaction = Transaction::new(
+                    transaction_id,
+                    taker_order_id,
+                    order.id(),
+                    self.price,
+                    consumed,
+                    order.side().opposite(),
+                );
+
+                result.add_transaction(transaction);
+
+                // If the order was completely executed, add it to filled_order_ids
+                if updated_order.is_none() {
+                    result.add_filled_order_id(order.id());
+                }
+            }
+
+            remaining = new_remaining;
+
+            // Calculate waiting time
+            let current_time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let waiting_time = current_time.saturating_sub(order.timestamp());
+
+            // update statistics
+            self.stats
+                .record_execution(consumed, order.price(), waiting_time);
+
+            if let Some(updated) = updated_order {
+                if hidden_reduced > 0 {
+                    self.reserve_quantity -= hidden_reduced;
+                    self.display_quantity += hidden_reduced;
+                }
+
+                self.orders.push(updated);
+            } else {
+                self.order_count -= 1;
+                match order {
+                    Order::IcebergOrder {
+                        reserve_quantity, ..
+                    } => {
+                        if reserve_quantity > 0 && hidden_reduced == 0 {
+                            self.reserve_quantity -= reserve_quantity;
+                        }
+                    }
+                    Order::ReserveOrder {
+                        reserve_quantity, ..
+                    } => {
+                        if reserve_quantity > 0 && hidden_reduced == 0 {
+                            self.reserve_quantity -= reserve_quantity;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -257,11 +243,7 @@ impl PriceLevel {
             display_quantity: self.display_quantity(),
             reserve_quantity: self.reserve_quantity(),
             order_count: self.order_count(),
-            orders: self
-                .iter_orders()
-                .into_iter()
-                .map(|rc| Arc::new(*rc))
-                .collect(),
+            orders: self.orders.to_vec(),
         }
     }
 
@@ -279,7 +261,7 @@ impl PriceLevel {
     pub fn update_order(
         &mut self,
         update: OrderUpdate,
-    ) -> Result<Option<Rc<Order<()>>>, PriceLevelError> {
+    ) -> Result<Option<Order<()>>, PriceLevelError> {
         match update {
             OrderUpdate::UpdatePrice {
                 order_id,
@@ -288,21 +270,19 @@ impl PriceLevel {
                 // If price changes, this order needs to be moved to a different price level
                 // So we remove it from this level and return it for re-insertion elsewhere
                 if new_price != self.price {
-                    let order = self.orders.remove(&order_id);
+                    let Some(order) = self.orders.remove(&order_id) else {
+                        return Ok(None);
+                    };
 
-                    if let Some(ref order_rc) = order {
-                        // Update counters
-                        let old_visible = order_rc.display_quantity();
-                        let old_hidden = order_rc.reserve_quantity();
-                        self.display_quantity -= old_visible;
-                        self.reserve_quantity -= old_hidden;
-                        self.order_count -= 1;
+                    let old_visible = order.display_quantity();
+                    let old_hidden = order.reserve_quantity();
+                    self.display_quantity -= old_visible;
+                    self.reserve_quantity -= old_hidden;
+                    self.order_count -= 1;
 
-                        // Record removal in statistics
-                        self.stats.record_order_removed();
-                    }
+                    self.stats.record_order_removed();
 
-                    Ok(order)
+                    Ok(Some(order))
                 } else {
                     // If price is the same, this is a no-op at the price level
                     // (Should be handled at the order book level)
@@ -316,50 +296,43 @@ impl PriceLevel {
                 order_id,
                 new_quantity,
             } => {
-                // Find the order
-                if let Some(order) = self.orders.find(&order_id) {
-                    // Get current quantities
-                    let old_visible = order.display_quantity();
-                    let old_hidden = order.reserve_quantity();
+                // Remove the old order
+                let Some(old_order) = self.orders.remove(&order_id) else {
+                    return Ok(None); // Order not found, remove by other thread
+                };
 
-                    // Remove the old order
-                    let old_order = match self.orders.remove(&order_id) {
-                        Some(order) => order,
-                        None => return Ok(None), // Order not found, remove by other thread
-                    };
+                // Get current quantities
+                let old_visible = old_order.display_quantity();
+                let old_hidden = old_order.reserve_quantity();
 
-                    // Create updated order with new quantity
-                    let new_order = old_order.with_reduced_quantity(new_quantity);
+                // Create updated order with new quantity
+                let new_order = old_order.with_reduced_quantity(new_quantity);
 
-                    // Calculate the new quantities
-                    let new_visible = new_order.display_quantity();
-                    let new_hidden = new_order.reserve_quantity();
+                // Calculate the new quantities
+                let new_visible = new_order.display_quantity();
+                let new_hidden = new_order.reserve_quantity();
 
-                    // Update atomic counters
-                    if old_visible != new_visible {
-                        if new_visible > old_visible {
-                            self.display_quantity += new_visible - old_visible;
-                        } else {
-                            self.display_quantity -= old_visible - new_visible;
-                        }
+                // Update atomic counters
+                if old_visible != new_visible {
+                    if new_visible > old_visible {
+                        self.display_quantity += new_visible - old_visible;
+                    } else {
+                        self.display_quantity -= old_visible - new_visible;
                     }
-
-                    if old_hidden != new_hidden {
-                        if new_hidden > old_hidden {
-                            self.reserve_quantity += new_hidden - old_hidden;
-                        } else {
-                            self.reserve_quantity -= old_hidden - new_hidden;
-                        }
-                    }
-
-                    // Add the updated order back to the queue
-                    let new_order_rc = Rc::new(new_order);
-                    self.orders.push(new_order_rc.clone());
-
-                    return Ok(Some(new_order_rc));
                 }
 
-                Ok(None) // Order not found
+                if old_hidden != new_hidden {
+                    if new_hidden > old_hidden {
+                        self.reserve_quantity += new_hidden - old_hidden;
+                    } else {
+                        self.reserve_quantity -= old_hidden - new_hidden;
+                    }
+                }
+
+                // Add the updated order back to the queue
+                let new_order_ref = self.orders.push(new_order);
+
+                return Ok(Some(*new_order_ref));
             }
 
             OrderUpdate::UpdatePriceAndQuantity {
@@ -368,48 +341,45 @@ impl PriceLevel {
                 new_quantity,
             } => {
                 // If price changes, remove the order and let the order book handle re-insertion
-                if new_price != self.price {
-                    let order = self.orders.remove(&order_id);
-
-                    if let Some(ref order_arc) = order {
-                        // Update atomic counters
-                        let visible_qty = order_arc.display_quantity();
-                        let hidden_qty = order_arc.reserve_quantity();
-
-                        self.display_quantity -= visible_qty;
-                        self.reserve_quantity -= hidden_qty;
-                        self.order_count -= 1;
-
-                        // Update statistics
-                        self.stats.record_order_removed();
-                    }
-                    Ok(order)
-                } else {
+                if new_price == self.price {
                     // If price is the same, just update the quantity (reuse logic)
-                    self.update_order(OrderUpdate::UpdateQuantity {
+                    return self.update_order(OrderUpdate::UpdateQuantity {
                         order_id,
                         new_quantity,
-                    })
-                }
+                    });
+                };
+
+                let Some(order) = self.orders.remove(&order_id) else {
+                    return Ok(None);
+                };
+
+                let visible_qty = order.display_quantity();
+                let hidden_qty = order.reserve_quantity();
+
+                self.display_quantity -= visible_qty;
+                self.reserve_quantity -= hidden_qty;
+                self.order_count -= 1;
+
+                self.stats.record_order_removed();
+
+                Ok(Some(order))
             }
 
             OrderUpdate::Cancel { order_id } => {
                 // Remove the order
-                let order = self.orders.remove(&order_id);
+                let Some(order) = self.orders.remove(&order_id) else {
+                    return Ok(None);
+                };
 
-                if let Some(ref order_rc) = order {
-                    // Update counters
-                    let old_visible = order_rc.display_quantity();
-                    let old_hidden = order_rc.reserve_quantity();
-                    self.display_quantity -= old_visible;
-                    self.reserve_quantity -= old_hidden;
-                    self.order_count -= 1;
+                let old_visible = order.display_quantity();
+                let old_hidden = order.reserve_quantity();
+                self.display_quantity -= old_visible;
+                self.reserve_quantity -= old_hidden;
+                self.order_count -= 1;
 
-                    // Record removal in statistics
-                    self.stats.record_order_removed();
-                }
+                self.stats.record_order_removed();
 
-                Ok(order)
+                Ok(Some(order))
             }
 
             OrderUpdate::Replace {
@@ -419,30 +389,27 @@ impl PriceLevel {
                 side: _,
             } => {
                 // For replacement, check if the price is changing
-                if price != self.price {
-                    // If price is different, remove the order and let order book handle re-insertion
-                    let order = self.orders.remove(&order_id);
-
-                    if let Some(ref order_rc) = order {
-                        // Update counters
-                        let old_visible = order_rc.display_quantity();
-                        let old_hidden = order_rc.reserve_quantity();
-                        self.display_quantity -= old_visible;
-                        self.reserve_quantity -= old_hidden;
-                        self.order_count -= 1;
-
-                        // Record removal in statistics
-                        self.stats.record_order_removed();
-                    }
-
-                    Ok(order)
-                } else {
+                if price == self.price {
                     // If price is the same, just update the quantity
-                    self.update_order(OrderUpdate::UpdateQuantity {
+                    return self.update_order(OrderUpdate::UpdateQuantity {
                         order_id,
                         new_quantity: quantity,
-                    })
-                }
+                    });
+                };
+
+                let Some(order) = self.orders.remove(&order_id) else {
+                    return Ok(None);
+                };
+
+                let old_visible = order.display_quantity();
+                let old_hidden = order.reserve_quantity();
+                self.display_quantity -= old_visible;
+                self.reserve_quantity -= old_hidden;
+                self.order_count -= 1;
+
+                self.stats.record_order_removed();
+
+                Ok(Some(order))
             }
         }
     }
@@ -470,11 +437,7 @@ impl From<&PriceLevel> for PriceLevelData {
             display_quantity: price_level.display_quantity(),
             reserve_quantity: price_level.reserve_quantity(),
             order_count: price_level.order_count(),
-            orders: price_level
-                .iter_orders()
-                .into_iter()
-                .map(|order_arc| *order_arc)
-                .collect(),
+            orders: price_level.iter_orders(),
         }
     }
 }
@@ -484,20 +447,15 @@ impl From<&PriceLevelSnapshot> for PriceLevel {
         let mut snapshot = snapshot.clone();
         snapshot.refresh_aggregates();
 
-        let rc_orders: Vec<Rc<Order<()>>> = snapshot
-            .orders
-            .into_iter()
-            .map(|arc| Rc::new(*arc))
-            .collect();
-        let queue = OrderQueue::from(rc_orders);
-        let order_count = queue.len();
+        let orders = OrderQueue::from(snapshot.orders);
+        let order_count = orders.len();
 
         Self {
             price: snapshot.price,
             display_quantity: snapshot.display_quantity,
             reserve_quantity: snapshot.reserve_quantity,
             order_count,
-            orders: queue,
+            orders,
             stats: PriceLevelStatistics::new(),
         }
     }
@@ -998,17 +956,18 @@ mod tests {
         let mut price_level = PriceLevel::new(10000);
         let order = create_standard_order(1, 10000, 100);
 
-        let order_arc = price_level.add_order(order);
+        {
+            // Verify the returned reference points to the expected order
+            let order_ref = price_level.add_order(order);
+            assert_eq!(order_ref.id(), OrderId::from_u64(1));
+            assert_eq!(order_ref.price(), 10000);
+            assert_eq!(order_ref.display_quantity(), 100);
+        }
 
         assert_eq!(price_level.display_quantity(), 100);
         assert_eq!(price_level.reserve_quantity(), 0);
         assert_eq!(price_level.order_count(), 1);
         assert_eq!(price_level.total_quantity(), 100);
-
-        // Verify the returned Arc contains the expected order
-        assert_eq!(order_arc.id(), OrderId::from_u64(1));
-        assert_eq!(order_arc.price(), 10000);
-        assert_eq!(order_arc.display_quantity(), 100);
 
         // Verify stats
         assert_eq!(price_level.stats().orders_added(), 1);
